@@ -13,9 +13,9 @@
   - 專利智慧視覺重心 (Entropy Focal) 畫面自動對焦。
   - **相片 EXIF 方向自動修正**：相機直拍/橫拍照片自動旋轉呈現。
   - 記憶體極致防護 (**v1.3.0** 新增)：內建 `maxPixels` 像素上限保險鎖與 OOM 自動降級重試機制，不論原圖為 4,000萬或 1億像素，解碼記憶體均強制鎖定在 <5MB，老手機 (如紅米一代) 永不當機。
-- **🔤 7 款全開源 CJK/中英統一字型 (FontSubsetting)**：
-  - 收錄 Orbitron (幾何科技體)、DotGothic16 (經典電子鐘)、Noto Sans/Serif JP、Zen Maru Gothic (圓體)、Klee One (楷體) 與 Dela Gothic One (重磅厚黑)。
-  - 字型採用字型子集化技術 (FontSubsetting)，全打包僅增加 ~150KB。
+- **🔤 11 款全開源 CJK/中英科技字型 (FontSubsetting)**：
+  - 收錄 Orbitron (幾何科技)、DotGothic16 (經典電子鐘)、Noto Sans/Serif JP、Zen Maru Gothic (圓體)、Klee One (楷體)、Dela Gothic One (重磅厚黑)、Audiowide (極致科技)、Oxanium (硬派電競)、Saira Stencil One (重磅鏤空) 與 Zen Dots (圓潤未來)。
+  - 字型全數採用 `FontSubsetting` 技術，全檔僅約 ~250KB。
 - **🎨 專屬極簡綠底 App Icon**：配備標準 Android 桌面與電視介面導向圖示。
 - **🔌 充電自動連動與夜間暗屏**：
   - 接上電源自動開啟。
@@ -33,7 +33,7 @@
 ```powershell
 .\build.ps1
 ```
-構建完成後的 APK 將會自動產出於 `dist/LittleClock-v1.3.0.apk`。
+構建完成後的 APK 將會自動產出於 `dist/LittleClock-v1.3.2.apk`。
 
 ---
 

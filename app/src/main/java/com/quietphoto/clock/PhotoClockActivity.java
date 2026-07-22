@@ -398,7 +398,16 @@ public final class PhotoClockActivity extends Activity {
                 tf = FontManager.getFont(this, "fonts/font_orbitron.ttf", Typeface.SANS_SERIF);
                 break;
             case 8:
-                tf = FontManager.getFont(this, "fonts/font_storopia.ttf", Typeface.SANS_SERIF);
+                tf = FontManager.getFont(this, "fonts/font_audiowide.ttf", Typeface.SANS_SERIF);
+                break;
+            case 9:
+                tf = FontManager.getFont(this, "fonts/font_oxanium.ttf", Typeface.SANS_SERIF);
+                break;
+            case 10:
+                tf = FontManager.getFont(this, "fonts/font_sairastencil.ttf", Typeface.SANS_SERIF);
+                break;
+            case 11:
+                tf = FontManager.getFont(this, "fonts/font_zendots.ttf", Typeface.SANS_SERIF);
                 break;
             case 0:
             default:
@@ -835,7 +844,7 @@ public final class PhotoClockActivity extends Activity {
             photoTime.setText(photoTimeFormat.format(nowDate));
         }
         if (photoDate != null) {
-            if (clockFontStyle == 7 || clockFontStyle == 8) {
+            if (clockFontStyle >= 7 && clockFontStyle <= 11) {
                 photoDate.setText(photoDateFormatEn.format(nowDate));
             } else {
                 photoDate.setText(photoDateFormat.format(nowDate));

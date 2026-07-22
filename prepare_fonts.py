@@ -10,9 +10,13 @@ fonts_map = {
     "font_rounded.ttf": "https://github.com/google/fonts/raw/main/ofl/zenmarugothic/ZenMaruGothic-Medium.ttf",
     "font_kai.ttf": "https://github.com/google/fonts/raw/main/ofl/kleeone/KleeOne-SemiBold.ttf",
     "font_heavy.ttf": "https://github.com/google/fonts/raw/main/ofl/delagothicone/DelaGothicOne-Regular.ttf",
+    "font_audiowide.ttf": "https://github.com/google/fonts/raw/main/ofl/audiowide/Audiowide-Regular.ttf",
+    "font_oxanium.ttf": "https://github.com/google/fonts/raw/main/ofl/oxanium/Oxanium%5Bwght%5D.ttf",
+    "font_sairastencil.ttf": "https://github.com/google/fonts/raw/main/ofl/sairastencilone/SairaStencilOne-Regular.ttf",
+    "font_zendots.ttf": "https://github.com/google/fonts/raw/main/ofl/zendots/ZenDots-Regular.ttf",
 }
 
-target_dir = r"C:\Users\hsuchungming\Desktop\WorkSpace\QuietPhotoClock\v12.0.0\app\src\main\assets\fonts"
+target_dir = os.path.join(os.path.dirname(__file__), "app", "src", "main", "assets", "fonts")
 os.makedirs(target_dir, exist_ok=True)
 
 temp_dir = os.path.join(os.environ["TEMP"], "font_download_cache")

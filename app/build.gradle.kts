@@ -10,8 +10,8 @@ android {
         applicationId = "com.quietphoto.clock"
         minSdk = 17
         targetSdk = 36
-        versionCode = 131
-        versionName = "1.3.1(test)"
+        versionCode = 132
+        versionName = "1.3.2"
     }
 
     buildTypes {

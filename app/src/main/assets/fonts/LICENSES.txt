@@ -47,14 +47,29 @@ Designer: Artakana
 Source: https://fonts.google.com/specimen/Dela+Gothic+One
 License: SIL Open Font License 1.1
 
---------------------------------------------------------------------------------
-[NON-DISTRIBUTABLE TEST FONT / 非分發測試字型]
-Font: Storopia
-File: font_storopia.ttf
-Note: This font is included in version v1.3.1(test) for internal testing only.
-      It is NOT explicitly open-source (OFL), and therefore THIS VERSION (v1.3.1(test))
-      IS NON-DISTRIBUTABLE / FOR TEST PURPOSES ONLY.
---------------------------------------------------------------------------------
+Font: Audiowide
+File: font_audiowide.ttf
+Designer: Astigmatic
+Source: https://fonts.google.com/specimen/Audiowide
+License: SIL Open Font License 1.1
+
+Font: Oxanium
+File: font_oxanium.ttf
+Designer: Severin Meyer
+Source: https://fonts.google.com/specimen/Oxanium
+License: SIL Open Font License 1.1
+
+Font: Saira Stencil One
+File: font_sairastencil.ttf
+Designer: Hector Gatti, Omnibus-Type
+Source: https://fonts.google.com/specimen/Saira+Stencil+One
+License: SIL Open Font License 1.1
+
+Font: Zen Dots
+File: font_zendots.ttf
+Designer: Yoshimichi Ohira
+Source: https://fonts.google.com/specimen/Zen+Dots
+License: SIL Open Font License 1.1
 
 ================================================================================
 

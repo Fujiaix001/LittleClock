@@ -418,12 +418,17 @@ public final class SettingsActivity extends Activity {
 
         LinearLayout fontRow3 = new LinearLayout(this);
         fontRow3.setGravity(Gravity.CENTER_VERTICAL);
-        fontRow3.setPadding(0, 0, 0, dp(6));
+        fontRow3.setPadding(0, 0, 0, dp(4));
+
+        LinearLayout fontRow4 = new LinearLayout(this);
+        fontRow4.setGravity(Gravity.CENTER_VERTICAL);
+        fontRow4.setPadding(0, 0, 0, dp(6));
 
         final String[] fontNames = {
                 "預設粗體", "經典電子鐘", "經典黑體",
                 "經典宋體", "柔和圓體", "文雅楷體",
-                "重磅厚黑", "Orbitron", "Storopia [測試]"
+                "重磅厚黑", "Orbitron", "Audiowide",
+                "Oxanium", "Saira Stencil", "Zen Dots"
         };
         fontStyleButtons.clear();
         for (int i = 0; i < fontNames.length; i++) {
@@ -445,14 +450,18 @@ public final class SettingsActivity extends Activity {
             } else if (i < 6) {
                 if (i < 5) fontParams.setMargins(0, 0, dp(6), 0);
                 fontRow2.addView(fontBtn, fontParams);
-            } else {
+            } else if (i < 9) {
                 if (i < 8) fontParams.setMargins(0, 0, dp(6), 0);
                 fontRow3.addView(fontBtn, fontParams);
+            } else {
+                if (i < 11) fontParams.setMargins(0, 0, dp(6), 0);
+                fontRow4.addView(fontBtn, fontParams);
             }
         }
         mainSection.addView(fontRow1);
         mainSection.addView(fontRow2);
         mainSection.addView(fontRow3);
+        mainSection.addView(fontRow4);
 
         clockBgCheck = new CheckBox(this);
         clockBgCheck.setText("顯示時間日期區塊半透明底板");

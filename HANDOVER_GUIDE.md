@@ -7,28 +7,28 @@
 ## 📌 1. 專案基本資訊與位置
 
 - **專案名稱**：小時鐘 (LittleClock)
-- **當前版本**：`v1.3.1(test)`
+- **當前版本**：`v1.3.2`
 - **專案絕對路徑**：`C:\Users\hsuchungming\Desktop\WorkSpace\LittleClock`
-- **測試發行包位置**：`C:\Users\hsuchungming\Desktop\WorkSpace\LittleClock\dist\LittleClock-v1.3.1(test).apk`
-- **特別備註**：`v1.3.1(test)` 包含 Storopia 測試字型（非明確開源授權），此版本為**不可公開分發測試版 (Non-distributable Test Version)**。
+- **正式發行包位置**：`C:\Users\hsuchungming\Desktop\WorkSpace\LittleClock\dist\LittleClock-v1.3.2.apk`
+- **授權狀態**：100% 正則開源（SIL OFL 1.1），可自由公開分發與商業展示。
 
 ---
 
 ## 🛠️ 2. 技術架構與設計哲學
 
 1. **核心技術**：原生 Android Java（`compileSdk 36`, `targetSdk 36`, `minSdk 17`）。
-2. **零外部依賴 (Zero Dependencies)**：無任何第三方 Gradle 庫，完全使用原生 Android API 打造，APK 僅約 **810 KB**。
-3. **字型配置與條款**：
-   - 包含 7 款正則開源字型（SIL OFL 1.1）與 1 款測試專用字型 `Storopia` (`font_storopia.ttf`)。
-   - **Orbitron & Storopia 特殊規則**：選擇 Orbitron 或 Storopia 時鐘風格時，日期與星期自動切換為英文格式（例如 `Wed, Jul 22`）。
+2. **零外部依賴 (Zero Dependencies)**：無任何第三方 Gradle 庫，完全使用原生 Android API 打造，APK 僅約 **850 KB**。
+3. **100% 正則開源字型 (SIL OFL 1.1)**：
+   - 採用 `FontSubsetting` 技術收錄 11 款精選開源字型：`Orbitron`, `DotGothic16`, `Noto Sans/Serif JP`, `Zen Maru Gothic`, `Klee One`, `Dela Gothic One`, `Audiowide`, `Oxanium`, `Saira Stencil One`, `Zen Dots`。
+   - **科技英數字型特殊規則**：選擇 Orbitron、Audiowide、Oxanium、Saira Stencil 或 Zen Dots 時，日期與星期自動切換為英文格式（例如 `Wed, Jul 22`）。
 4. **專屬 App Icon**：純淺綠底極簡 Orbitron 「Clock」文字圖示 (`@mipmap/ic_launcher`)。
 
 ---
 
 ## 🌟 3. 已完成的核心功能與關鍵優化
 
-- **🔤 Storopia 測試字型支援 (v1.3.1(test))**：
-  - 新增 Storopia 經典英數時鐘字型，設定選單提供選擇，附帶非公開分發警告聲明。
+- **🔤 4 款合法開源科技字型 (v1.3.2)**：
+  - 徹底移除非開源測試字型 Storopia，引進 `Audiowide`, `Oxanium`, `Saira Stencil One`, `Zen Dots` 四款 SIL OFL 1.1 開源字型。
 - **🔍 雙指捏合手勢拉大/縮小時鐘 (Pinch-to-Zoom)**：
   - 支援雙指任意放大幅度 (`0.4x` ~ `6.0x`) 與單指拖曳位置，並透過 `CLOCK_SCALE_FACTOR` 自動持久化記憶。
 - **🛡️ 超大相片 `maxPixels` 解碼安全鎖 + OOM 降級重試**：
@@ -68,5 +68,5 @@ git status
 ## 💬 6. 新對話接續提示 (在新對話直接發送以下文字即可)
 
 ```text
-我們正在維護「小時鐘」(LittleClock) Android 專案，專案路徑為 C:\Users\hsuchungming\Desktop\WorkSpace\LittleClock，當前版本為 v1.3.1(test)，已完成 Git 初始化。請參考該目錄下的 HANDOVER_GUIDE.md 並在開始寫作前先檢查 Git 管理狀態。
+我們正在維護「小時鐘」(LittleClock) Android 專案，專案路徑為 C:\Users\hsuchungming\Desktop\WorkSpace\LittleClock，當前版本為 v1.3.2，已完成 Git 初始化。請參考該目錄下的 HANDOVER_GUIDE.md 並在開始寫作前先檢查 Git 管理狀態。
 ```
