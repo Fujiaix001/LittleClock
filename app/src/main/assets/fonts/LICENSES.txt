@@ -47,6 +47,15 @@ Designer: Artakana
 Source: https://fonts.google.com/specimen/Dela+Gothic+One
 License: SIL Open Font License 1.1
 
+--------------------------------------------------------------------------------
+[NON-DISTRIBUTABLE TEST FONT / 非分發測試字型]
+Font: Storopia
+File: font_storopia.ttf
+Note: This font is included in version v1.3.1(test) for internal testing only.
+      It is NOT explicitly open-source (OFL), and therefore THIS VERSION (v1.3.1(test))
+      IS NON-DISTRIBUTABLE / FOR TEST PURPOSES ONLY.
+--------------------------------------------------------------------------------
+
 ================================================================================
 
 SIL OPEN FONT LICENSE Version 1.1 - 26 February 2007

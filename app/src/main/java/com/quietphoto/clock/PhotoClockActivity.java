@@ -397,6 +397,9 @@ public final class PhotoClockActivity extends Activity {
             case 7:
                 tf = FontManager.getFont(this, "fonts/font_orbitron.ttf", Typeface.SANS_SERIF);
                 break;
+            case 8:
+                tf = FontManager.getFont(this, "fonts/font_storopia.ttf", Typeface.SANS_SERIF);
+                break;
             case 0:
             default:
                 tf = Typeface.DEFAULT_BOLD;
@@ -832,7 +835,7 @@ public final class PhotoClockActivity extends Activity {
             photoTime.setText(photoTimeFormat.format(nowDate));
         }
         if (photoDate != null) {
-            if (clockFontStyle == 7) {
+            if (clockFontStyle == 7 || clockFontStyle == 8) {
                 photoDate.setText(photoDateFormatEn.format(nowDate));
             } else {
                 photoDate.setText(photoDateFormat.format(nowDate));
