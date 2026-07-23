@@ -303,7 +303,64 @@ public final class PhotoClockActivity extends Activity {
         lightSensor = sensorManager == null ? null : sensorManager.getDefaultSensor(Sensor.TYPE_LIGHT);
         setupPhotoGestures();
         createMediaObserver();
+        extractDefaultWallpapers();
         checkAndRequestStoragePermission();
+    }
+
+    private void extractDefaultWallpapers() {
+        if (prefs.getBoolean("wallpaper_extracted", false)) {
+            return;
+        }
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    java.io.File targetDir = getExternalFilesDir(android.os.Environment.DIRECTORY_PICTURES);
+                    if (targetDir == null) {
+                        targetDir = getFilesDir();
+                    }
+                    targetDir = new java.io.File(targetDir, "數位風景");
+                    if (!targetDir.exists()) {
+                        targetDir.mkdirs();
+                    }
+                    String[] assets = getAssets().list("digital_landscapes");
+                    if (assets != null) {
+                        for (String asset : assets) {
+                            java.io.File outFile = new java.io.File(targetDir, asset);
+                            if (!outFile.exists()) {
+                                java.io.InputStream in = getAssets().open("digital_landscapes/" + asset);
+                                java.io.OutputStream out = new java.io.FileOutputStream(outFile);
+                                byte[] buffer = new byte[4096];
+                                int read;
+                                while ((read = in.read(buffer)) != -1) {
+                                    out.write(buffer, 0, read);
+                                }
+                                in.close();
+                                out.flush();
+                                out.close();
+                            }
+                        }
+                    }
+                    java.util.Set<String> folders = prefs.getStringSet(SettingsActivity.PHOTO_FOLDERS, new java.util.HashSet<String>());
+                    if (folders == null || folders.isEmpty()) {
+                        folders = new java.util.HashSet<String>();
+                        folders.add(targetDir.getAbsolutePath());
+                        prefs.edit().putStringSet(SettingsActivity.PHOTO_FOLDERS, folders).apply();
+                        runOnUiThread(new Runnable() {
+                            @Override
+                            public void run() {
+                                if (activityResumed && hasPhotoReadAccess()) {
+                                    startPhotoSlideshow();
+                                }
+                            }
+                        });
+                    }
+                    prefs.edit().putBoolean("wallpaper_extracted", true).apply();
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
+            }
+        }).start();
     }
 
     @Override
@@ -643,9 +700,10 @@ public final class PhotoClockActivity extends Activity {
         photoPanDurationMs = Math.max(2000L, photoIntervalMs - 2000L);
         clockBgEnabled = prefs.getBoolean(SettingsActivity.CLOCK_BACKGROUND_ENABLED, false);
         int legacyFontStyle = prefs.getInt(SettingsActivity.CLOCK_FONT_STYLE, 0);
+        String defaultFont = BuildConfig.INCLUDE_STOROPIA ? "asset:font_storopia.ttf" : "asset:font_oxanium.ttf";
         clockFontId = FontManager.normalizeId(this, prefs.getString(
                 SettingsActivity.CLOCK_FONT_ID,
-                FontManager.getIdForLegacyIndex(legacyFontStyle)));
+                legacyFontStyle == 0 ? defaultFont : FontManager.getIdForLegacyIndex(legacyFontStyle)));
         nightModeEnabled = prefs.getBoolean(SettingsActivity.NIGHT_MODE_ENABLED, false);
         nightStartHour = prefs.getInt(SettingsActivity.NIGHT_START_HOUR, 23);
         nightEndHour = prefs.getInt(SettingsActivity.NIGHT_END_HOUR, 7);
@@ -668,7 +726,7 @@ public final class PhotoClockActivity extends Activity {
         weatherLongitude = parseDouble(prefs.getString(SettingsActivity.WEATHER_LONGITUDE, null));
         clockScaleFactor = prefs.getFloat(
                 orientationKey(CLOCK_SCALE_FACTOR),
-                prefs.getFloat(CLOCK_SCALE_FACTOR, 1.0f));
+                prefs.getFloat(CLOCK_SCALE_FACTOR, 0.75f));
 
         favoritePhotos.clear();
         hiddenPhotos.clear();
@@ -1162,10 +1220,10 @@ public final class PhotoClockActivity extends Activity {
     private void restoreClockPosition() {
         float ratioX = prefs.getFloat(
                 orientationKey(CLOCK_POS_X_RATIO),
-                prefs.getFloat(SettingsActivity.CLOCK_X_RATIO, -1.0f));
+                prefs.getFloat(SettingsActivity.CLOCK_X_RATIO, 0.95f));
         float ratioY = prefs.getFloat(
                 orientationKey(CLOCK_POS_Y_RATIO),
-                prefs.getFloat(SettingsActivity.CLOCK_Y_RATIO, -1.0f));
+                prefs.getFloat(SettingsActivity.CLOCK_Y_RATIO, 0.90f));
         if (ratioX < 0.0f || ratioY < 0.0f || rootContainer == null || clockPanel == null) {
             return;
         }
