@@ -16,13 +16,23 @@ fonts_map = {
     "font_zendots.ttf": "https://github.com/google/fonts/raw/main/ofl/zendots/ZenDots-Regular.ttf",
 }
 
+cjk_font_names = {
+    "font_digital.ttf",
+    "font_sans.ttf",
+    "font_serif.ttf",
+    "font_rounded.ttf",
+    "font_kai.ttf",
+    "font_heavy.ttf",
+}
+
 target_dir = os.path.join(os.path.dirname(__file__), "app", "src", "main", "assets", "fonts")
 os.makedirs(target_dir, exist_ok=True)
 
 temp_dir = os.path.join(os.environ["TEMP"], "font_download_cache")
 os.makedirs(temp_dir, exist_ok=True)
 
-chars = "0123456789:./-_()[],+ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz年月日時星期一二三四五六"
+latin_chars = "0123456789:./-_()[],+ ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+cjk_date_chars = "年月日時星期一二三四五六"
 
 headers = {'User-Agent': 'Mozilla/5.0'}
 
@@ -35,14 +45,21 @@ for name, url in fonts_map.items():
         with urllib.request.urlopen(req) as resp, open(raw_path, 'wb') as out_file:
             out_file.write(resp.read())
     
+    subset_chars = latin_chars + (cjk_date_chars if name in cjk_font_names else "")
     cmd = [
         sys.executable, "-m", "fontTools.subset",
         raw_path,
-        f"--text={chars}",
+        f"--text={subset_chars}",
         f"--output-file={out_path}"
     ]
     subprocess.run(cmd, check=True)
     size_kb = os.path.getsize(out_path) / 1024.0
     print(f"Generated {out_path}: {size_kb:.1f} KB")
 
-print("All fonts successfully prepared!")
+storopia_path = os.path.join(target_dir, "font_storopia.ttf")
+if not os.path.exists(storopia_path):
+    raise FileNotFoundError(
+        "font_storopia.ttf is an internal test asset and must be supplied separately"
+    )
+
+print("All distributable fonts were subset successfully; Storopia was preserved.")

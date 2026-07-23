@@ -10,8 +10,24 @@ android {
         applicationId = "com.quietphoto.clock"
         minSdk = 17
         targetSdk = 36
-        versionCode = 132
-        versionName = "1.3.2"
+        versionCode = 220
+        versionName = "2.2.0"
+    }
+
+    flavorDimensions += "fontBundle"
+    productFlavors {
+        create("storopiaTest") {
+            dimension = "fontBundle"
+            versionCode = 220
+            versionName = "2.2.0-test"
+            buildConfigField("boolean", "INCLUDE_STOROPIA", "true")
+        }
+        create("standard") {
+            dimension = "fontBundle"
+            versionCode = 221
+            versionName = "2.2.1"
+            buildConfigField("boolean", "INCLUDE_STOROPIA", "false")
+        }
     }
 
     buildTypes {
@@ -29,6 +45,10 @@ android {
         targetCompatibility = JavaVersion.VERSION_1_8
     }
 
+    buildFeatures {
+        buildConfig = true
+    }
+
     lint {
         abortOnError = true
         checkReleaseBuilds = true
@@ -36,4 +56,63 @@ android {
 }
 
 dependencies {
+    implementation("androidx.exifinterface:exifinterface:1.3.7")
+    compileOnly("androidx.annotation:annotation:1.10.0")
+    testImplementation("junit:junit:4.13.2")
+}
+
+val bundledFontNames = setOf(
+    "font_audiowide.ttf",
+    "font_digital.ttf",
+    "font_heavy.ttf",
+    "font_kai.ttf",
+    "font_orbitron.ttf",
+    "font_oxanium.ttf",
+    "font_rounded.ttf",
+    "font_sairastencil.ttf",
+    "font_sans.ttf",
+    "font_serif.ttf",
+    "font_zendots.ttf",
+)
+
+val verifyBundledFonts by tasks.registering {
+    val fontDirectory = layout.projectDirectory.dir("src/main/assets/fonts")
+    inputs.dir(fontDirectory)
+
+    doLast {
+        val directory = fontDirectory.asFile
+        val actualNames = directory.listFiles()
+            ?.filter { it.isFile && it.extension.equals("ttf", ignoreCase = true) }
+            ?.map { it.name }
+            ?.toSet()
+            ?: emptySet()
+
+        check(actualNames == bundledFontNames) {
+            "Bundled fonts differ from the catalog. Missing: ${bundledFontNames - actualNames}; " +
+                "unexpected: ${actualNames - bundledFontNames}"
+        }
+
+        bundledFontNames.forEach { name ->
+            val font = directory.resolve(name)
+            check(font.length() > 1_000L) { "Font asset is empty or invalid: $name" }
+            val signature = font.inputStream().use { input ->
+                ByteArray(4).also { bytes ->
+                    check(input.read(bytes) == bytes.size) { "Cannot read font header: $name" }
+                }
+            }
+            val isTrueType = signature.contentEquals(byteArrayOf(0, 1, 0, 0))
+            val isOpenType = signature.contentEquals("OTTO".toByteArray(Charsets.US_ASCII))
+            check(isTrueType || isOpenType) { "Unsupported font header: $name" }
+        }
+
+        val storopia = layout.projectDirectory
+            .file("src/storopiaTest/assets/fonts/font_storopia.ttf").asFile
+        check(storopia.isFile && storopia.length() > 1_000L) {
+            "Storopia test flavor font is missing or invalid"
+        }
+    }
+}
+
+tasks.named("preBuild").configure {
+    dependsOn(verifyBundledFonts)
 }

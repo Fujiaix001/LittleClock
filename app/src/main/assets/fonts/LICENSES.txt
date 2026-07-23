@@ -1,5 +1,5 @@
-This application includes the following open-source fonts, all licensed under
-the SIL Open Font License, Version 1.1 (OFL-1.1).
+This application includes the following fonts. All are licensed under the
+SIL Open Font License, Version 1.1 (OFL-1.1), except where explicitly noted.
 
 The full text of the SIL OFL 1.1 is included at the bottom of this file.
 
@@ -70,6 +70,15 @@ File: font_zendots.ttf
 Designer: Yoshimichi Ohira
 Source: https://fonts.google.com/specimen/Zen+Dots
 License: SIL Open Font License 1.1
+
+--------------------------------------------------------------------------------
+[NON-DISTRIBUTABLE TEST FLAVOR FONT / 非分發測試版本字型]
+Font: Storopia
+File: font_storopia.ttf
+Note: Included only in the Storopia test flavor for internal testing. Its
+      redistribution license has not been verified, so APKs containing it
+      must not be published or shared outside the licensed testing environment.
+--------------------------------------------------------------------------------
 
 ================================================================================
 

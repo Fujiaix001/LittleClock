@@ -1,20 +1,30 @@
 package com.quietphoto.clock;
 
-import android.annotation.SuppressLint;
 import android.app.Activity;
+import android.app.AlertDialog;
+import android.content.DialogInterface;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
+import android.content.Context;
+import android.hardware.Sensor;
+import android.hardware.SensorManager;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
 import android.view.Gravity;
 import android.view.View;
+import android.view.ViewGroup;
+import android.view.WindowInsets;
 import android.view.WindowManager;
+import android.widget.ArrayAdapter;
+import android.widget.AbsListView;
 import android.widget.Button;
 import android.widget.CheckBox;
+import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
+import android.widget.Spinner;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -27,6 +37,8 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 public final class SettingsActivity extends Activity {
     public static final String PREFERENCES = "quietphotoclock";
@@ -36,11 +48,29 @@ public final class SettingsActivity extends Activity {
     public static final String CLOCK_Y_RATIO = "clock_y_ratio";
     public static final String CLOCK_BACKGROUND_ENABLED = "clock_bg_enabled";
     public static final String CLOCK_FONT_STYLE = "clock_font_style";
-    public static final String AUTO_START_CHARGING = "auto_start_charging";
+    public static final String CLOCK_FONT_ID = "clock_font_id";
     public static final String NIGHT_MODE_ENABLED = "night_mode_enabled";
     public static final String NIGHT_START_HOUR = "night_start_hour";
     public static final String NIGHT_END_HOUR = "night_end_hour";
     public static final String TRANSITION_TYPE = "transition_type";
+    public static final String LOW_POWER_MODE = "low_power_mode";
+    public static final String PHOTO_DISPLAY_MODE = "photo_display_mode";
+    public static final String BURN_IN_ENABLED = "burn_in_enabled";
+    public static final String AUTO_BRIGHTNESS_ENABLED = "auto_brightness_enabled";
+    public static final String FAVORITES_ONLY = "favorites_only";
+    public static final String FAVORITE_PHOTOS = "favorite_photos";
+    public static final String HIDDEN_PHOTOS = "hidden_photos";
+    public static final String WEATHER_ENABLED = "weather_enabled";
+    public static final String WEATHER_SHOW_LOCATION = "weather_show_location";
+    public static final String WEATHER_COMPACT_MODE = "weather_compact_mode";
+    public static final String WEATHER_LOCATION_NAME = "weather_location_name";
+    public static final String WEATHER_LATITUDE = "weather_latitude";
+    public static final String WEATHER_LONGITUDE = "weather_longitude";
+    public static final String WEATHER_TIMEZONE = "weather_timezone";
+    public static final String WEATHER_TEMPERATURE = "weather_temperature";
+    public static final String WEATHER_CODE = "weather_code";
+    public static final String WEATHER_IS_DAY = "weather_is_day";
+    public static final String WEATHER_UPDATED_AT = "weather_updated_at";
 
     // 3 大進階視覺特效 Key
     public static final String ADAPTIVE_COLOR_ENABLED = "adaptive_color_enabled";
@@ -62,33 +92,56 @@ public final class SettingsActivity extends Activity {
     private int selectedInterval;
     private boolean clockBgEnabled;
     private int selectedFontStyle;
-    private boolean autoStartCharging;
+    private String selectedFontId;
+    private List<FontManager.FontOption> fontOptions;
     private boolean nightModeEnabled;
     private int nightStartHour;
     private int nightEndHour;
     private int selectedTransition;
+    private int selectedDisplayMode;
 
     private boolean adaptiveColorEnabled;
     private boolean polaroidFrameEnabled;
     private boolean smartFocusEnabled;
+    private boolean lowPowerMode;
+    private boolean burnInEnabled;
+    private boolean autoBrightnessEnabled;
+    private boolean favoritesOnly;
+    private boolean weatherEnabled;
+    private boolean weatherShowLocation;
+    private boolean weatherCompactMode = true;
+    private String weatherLocationName = "";
+    private String weatherTimezone = "auto";
+    private double weatherLatitude = Double.NaN;
+    private double weatherLongitude = Double.NaN;
+    private boolean weatherLocationChanged;
 
     private File currentDirectory;
 
     private TextView pathText;
     private TextView selectionText;
     private TextView intervalDisplay;
-    private CheckBox autoStartCheck;
     private CheckBox nightModeCheck;
     private CheckBox clockBgCheck;
     private CheckBox adaptiveColorCheck;
     private CheckBox polaroidFrameCheck;
     private CheckBox smartFocusCheck;
+    private CheckBox lowPowerCheck;
+    private CheckBox burnInCheck;
+    private CheckBox autoBrightnessCheck;
+    private CheckBox favoritesOnlyCheck;
     private CheckBox currentFolderCheck;
+    private CheckBox weatherEnabledCheck;
+    private CheckBox weatherLocationCheck;
+    private CheckBox weatherCompactCheck;
     private TextView nightScheduleText;
+    private TextView weatherLocationText;
     private LinearLayout folderList;
 
-    private final List<Button> fontStyleButtons = new ArrayList<Button>();
-    private final List<Button> transitionButtons = new ArrayList<Button>();
+    private Spinner fontSpinner;
+    private Spinner transitionSpinner;
+    private Spinner displayModeSpinner;
+    private final ExecutorService networkExecutor = Executors.newSingleThreadExecutor();
 
     private static class StorageVolumeItem {
         final String label;
@@ -107,6 +160,7 @@ public final class SettingsActivity extends Activity {
         getWindow().setFlags(
                 WindowManager.LayoutParams.FLAG_FULLSCREEN,
                 WindowManager.LayoutParams.FLAG_FULLSCREEN);
+        registerPredictiveBackCallback();
 
         currentDirectory = null;
 
@@ -114,14 +168,28 @@ public final class SettingsActivity extends Activity {
         selectedInterval = prefs.getInt(PHOTO_INTERVAL_SECONDS, DEFAULT_INTERVAL_SECONDS);
         clockBgEnabled = prefs.getBoolean(CLOCK_BACKGROUND_ENABLED, false);
         selectedFontStyle = prefs.getInt(CLOCK_FONT_STYLE, 0);
-        autoStartCharging = prefs.getBoolean(AUTO_START_CHARGING, true);
+        selectedFontId = FontManager.normalizeId(this, prefs.getString(
+                CLOCK_FONT_ID, FontManager.getIdForLegacyIndex(selectedFontStyle)));
+        fontOptions = FontManager.getOptions(this);
         nightModeEnabled = prefs.getBoolean(NIGHT_MODE_ENABLED, false);
         nightStartHour = prefs.getInt(NIGHT_START_HOUR, 23);
         nightEndHour = prefs.getInt(NIGHT_END_HOUR, 7);
         selectedTransition = prefs.getInt(TRANSITION_TYPE, 0);
+        selectedDisplayMode = prefs.getInt(PHOTO_DISPLAY_MODE, 0);
         adaptiveColorEnabled = prefs.getBoolean(ADAPTIVE_COLOR_ENABLED, true);
         polaroidFrameEnabled = prefs.getBoolean(POLAROID_FRAME_ENABLED, false);
         smartFocusEnabled = prefs.getBoolean(SMART_FOCUS_ENABLED, true);
+        lowPowerMode = prefs.getBoolean(LOW_POWER_MODE, true);
+        burnInEnabled = prefs.getBoolean(BURN_IN_ENABLED, true);
+        autoBrightnessEnabled = prefs.getBoolean(AUTO_BRIGHTNESS_ENABLED, false);
+        favoritesOnly = prefs.getBoolean(FAVORITES_ONLY, false);
+        weatherEnabled = prefs.getBoolean(WEATHER_ENABLED, false);
+        weatherShowLocation = prefs.getBoolean(WEATHER_SHOW_LOCATION, false);
+        weatherCompactMode = prefs.getBoolean(WEATHER_COMPACT_MODE, true);
+        weatherLocationName = prefs.getString(WEATHER_LOCATION_NAME, "");
+        weatherTimezone = prefs.getString(WEATHER_TIMEZONE, "auto");
+        weatherLatitude = parseDouble(prefs.getString(WEATHER_LATITUDE, null));
+        weatherLongitude = parseDouble(prefs.getString(WEATHER_LONGITUDE, null));
 
         Set<String> saved = prefs.getStringSet(PHOTO_FOLDERS, null);
         if (saved != null && !saved.isEmpty()) {
@@ -133,6 +201,12 @@ public final class SettingsActivity extends Activity {
     }
 
     @Override
+    protected void onDestroy() {
+        networkExecutor.shutdownNow();
+        super.onDestroy();
+    }
+
+    @Override
     public void onWindowFocusChanged(boolean hasFocus) {
         super.onWindowFocusChanged(hasFocus);
         if (hasFocus) {
@@ -141,23 +215,44 @@ public final class SettingsActivity extends Activity {
         }
     }
 
-    @SuppressLint("GestureBackNavigation")
     @Override
+    @android.annotation.SuppressLint("GestureBackNavigation")
     public void onBackPressed() {
+        if (!navigateToParentDirectory()) {
+            super.onBackPressed();
+        }
+    }
+
+    private void registerPredictiveBackCallback() {
+        if (Build.VERSION.SDK_INT >= 33) {
+            getOnBackInvokedDispatcher().registerOnBackInvokedCallback(
+                    android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT,
+                    new android.window.OnBackInvokedCallback() {
+                        @Override
+                        public void onBackInvoked() {
+                            if (!navigateToParentDirectory()) {
+                                finish();
+                            }
+                        }
+                    });
+        }
+    }
+
+    private boolean navigateToParentDirectory() {
         if (currentDirectory != null) {
             if (isRootStorageVolume(currentDirectory)) {
                 currentDirectory = null;
                 showDirectory();
-                return;
+                return true;
             }
             File parent = currentDirectory.getParentFile();
             if (parent != null) {
                 currentDirectory = parent;
                 showDirectory();
-                return;
+                return true;
             }
         }
-        super.onBackPressed();
+        return false;
     }
 
     private boolean isRootStorageVolume(File file) {
@@ -178,7 +273,7 @@ public final class SettingsActivity extends Activity {
 
         File primary = Environment.getExternalStorageDirectory();
         if (primary != null && primary.exists()) {
-            volumes.add(new StorageVolumeItem("📱 內建儲存空間 (Internal Storage)", primary));
+            volumes.add(new StorageVolumeItem("內建儲存空間", primary));
             addedPaths.add(primary.getAbsolutePath());
         }
 
@@ -195,7 +290,7 @@ public final class SettingsActivity extends Activity {
                         String cPath = rootDir.getAbsolutePath();
                         if (rootDir.exists() && !addedPaths.contains(cPath)) {
                             addedPaths.add(cPath);
-                            volumes.add(new StorageVolumeItem("💳 外接 MicroSD 卡 (" + rootDir.getName() + ")", rootDir));
+                            volumes.add(new StorageVolumeItem("外接儲存空間（" + rootDir.getName() + "）", rootDir));
                         }
                     }
                 }
@@ -214,13 +309,13 @@ public final class SettingsActivity extends Activity {
                         String c0 = primary0.getAbsolutePath();
                         if (primary0.exists() && !addedPaths.contains(c0)) {
                             addedPaths.add(c0);
-                            volumes.add(new StorageVolumeItem("📱 內建儲存空間 (Internal Storage)", primary0));
+                            volumes.add(new StorageVolumeItem("內建儲存空間", primary0));
                         }
                     } else {
                         String cPath = subDir.getAbsolutePath();
                         if (!addedPaths.contains(cPath)) {
                             addedPaths.add(cPath);
-                            volumes.add(new StorageVolumeItem("💳 外接 MicroSD 卡 (" + name + ")", subDir));
+                            volumes.add(new StorageVolumeItem("外接儲存空間（" + name + "）", subDir));
                         }
                     }
                 }
@@ -237,14 +332,15 @@ public final class SettingsActivity extends Activity {
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setPadding(dp(18), dp(12), dp(18), dp(12));
+        applySystemBarInsets(root);
 
         LinearLayout titleRow = new LinearLayout(this);
         titleRow.setGravity(Gravity.CENTER_VERTICAL);
-        TextView title = text("⚙️ 設定", 23, PRIMARY);
+        TextView title = text("設定", 23, PRIMARY);
         title.setTypeface(Typeface.DEFAULT_BOLD);
 
         selectionText = text("", 14, ACCENT);
-        selectionText.setGravity(Gravity.RIGHT | Gravity.CENTER_VERTICAL);
+        selectionText.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
 
         Button cancel = button("取消", PANEL);
         cancel.setOnClickListener(new View.OnClickListener() {
@@ -262,15 +358,14 @@ public final class SettingsActivity extends Activity {
             }
         });
 
-        titleRow.addView(title, new LinearLayout.LayoutParams(0, dp(48), 2));
-        titleRow.addView(selectionText, new LinearLayout.LayoutParams(0, dp(48), 1));
-        titleRow.addView(cancel, new LinearLayout.LayoutParams(dp(95), dp(44)));
-        LinearLayout.LayoutParams saveParams = new LinearLayout.LayoutParams(dp(95), dp(44));
+        titleRow.addView(title, new LinearLayout.LayoutParams(0, dp(48), 1));
+        titleRow.addView(cancel, new LinearLayout.LayoutParams(dp(80), dp(44)));
+        LinearLayout.LayoutParams saveParams = new LinearLayout.LayoutParams(dp(80), dp(44));
         saveParams.setMargins(dp(10), 0, 0, 0);
         titleRow.addView(save, saveParams);
         root.addView(titleRow);
 
-        // --- 區塊一：播放、自動化與夜間休眠 ---
+        // 常用播放與顯示設定。
         LinearLayout mainSection = new LinearLayout(this);
         mainSection.setOrientation(LinearLayout.VERTICAL);
         mainSection.setPadding(dp(12), dp(10), dp(12), dp(10));
@@ -279,12 +374,12 @@ public final class SettingsActivity extends Activity {
         LinearLayout intervalHeader = new LinearLayout(this);
         intervalHeader.setGravity(Gravity.CENTER_VERTICAL);
 
-        TextView intervalTitle = text("⏱️ 單張圖片停留時間", 17, PRIMARY);
+        TextView intervalTitle = text("相片停留時間", 17, PRIMARY);
         intervalTitle.setTypeface(Typeface.DEFAULT_BOLD);
 
         intervalDisplay = text(selectedInterval + " 秒", 18, ACCENT);
         intervalDisplay.setTypeface(Typeface.DEFAULT_BOLD);
-        intervalDisplay.setGravity(Gravity.RIGHT);
+        intervalDisplay.setGravity(Gravity.END);
 
         intervalHeader.addView(intervalTitle, new LinearLayout.LayoutParams(0, dp(32), 1));
         intervalHeader.addView(intervalDisplay, new LinearLayout.LayoutParams(
@@ -332,170 +427,99 @@ public final class SettingsActivity extends Activity {
         presetsRow.addView(plus, plusParams);
         mainSection.addView(presetsRow);
 
-        // --- 進階視覺特效開關 ---
-        TextView fxHeader = text("✨ 進階視覺特效", 16, ACCENT);
-        fxHeader.setTypeface(Typeface.DEFAULT_BOLD);
-        fxHeader.setPadding(0, dp(8), 0, dp(4));
-        mainSection.addView(fxHeader);
+        transitionSpinner = addSpinner(
+                mainSection,
+                "相片轉場",
+                new String[] { "淡入", "水平滑動", "垂直滑動", "縮放", "翻轉", "旋轉" },
+                Math.max(0, Math.min(5, selectedTransition)));
 
-        adaptiveColorCheck = new CheckBox(this);
-        adaptiveColorCheck.setText("🎨 開啟時鐘底板/文字光暈動態適應相片主色調");
-        adaptiveColorCheck.setTextColor(PRIMARY);
-        adaptiveColorCheck.setTextSize(15);
-        adaptiveColorCheck.setChecked(adaptiveColorEnabled);
-        adaptiveColorCheck.setPadding(dp(4), dp(2), dp(4), dp(2));
-        mainSection.addView(adaptiveColorCheck);
+        fontSpinner = addSpinner(
+                mainSection,
+                "時鐘字型",
+                FontManager.getDisplayNames(fontOptions),
+                FontManager.findOptionIndex(fontOptions, selectedFontId));
 
-        polaroidFrameCheck = new CheckBox(this);
-        polaroidFrameCheck.setText("📷 開啟復古拍立得相框與立體陰影");
-        polaroidFrameCheck.setTextColor(PRIMARY);
-        polaroidFrameCheck.setTextSize(15);
-        polaroidFrameCheck.setChecked(polaroidFrameEnabled);
-        polaroidFrameCheck.setPadding(dp(4), dp(2), dp(4), dp(2));
-        mainSection.addView(polaroidFrameCheck);
+        displayModeSpinner = addSpinner(
+                mainSection,
+                "相片顯示",
+                new String[] { "填滿畫面", "完整顯示", "柔和背景（選用）" },
+                Math.max(0, Math.min(2, selectedDisplayMode)));
 
-        smartFocusCheck = new CheckBox(this);
-        smartFocusCheck.setText("🔍 開啟圖片智慧視覺重心 (Entropy Focal) 微幅推近");
-        smartFocusCheck.setTextColor(PRIMARY);
-        smartFocusCheck.setTextSize(15);
-        smartFocusCheck.setChecked(smartFocusEnabled);
-        smartFocusCheck.setPadding(dp(4), dp(2), dp(4), dp(2));
-        mainSection.addView(smartFocusCheck);
+        weatherEnabledCheck = checkBox("顯示天氣（僅 Wi-Fi）", weatherEnabled);
+        mainSection.addView(weatherEnabledCheck);
 
-        // --- 相片切換轉場選單 ---
-        TextView transitionHeader = text("🎞️ 相片切換轉場特效", 16, PRIMARY);
-        transitionHeader.setTypeface(Typeface.DEFAULT_BOLD);
-        transitionHeader.setPadding(0, dp(8), 0, dp(4));
-        mainSection.addView(transitionHeader);
+        final LinearLayout weatherOptions = new LinearLayout(this);
+        weatherOptions.setOrientation(LinearLayout.VERTICAL);
+        weatherOptions.setPadding(dp(8), 0, dp(4), dp(4));
+        weatherOptions.setVisibility(weatherEnabled ? View.VISIBLE : View.GONE);
 
-        LinearLayout transRow1 = new LinearLayout(this);
-        transRow1.setGravity(Gravity.CENTER_VERTICAL);
-        transRow1.setPadding(0, 0, 0, dp(4));
-
-        LinearLayout transRow2 = new LinearLayout(this);
-        transRow2.setGravity(Gravity.CENTER_VERTICAL);
-        transRow2.setPadding(0, 0, 0, dp(6));
-
-        final String[] transNames = { "經典淡入", "左右推頁", "上下推頁", "藝廊縮放", "3D翻轉", "傾斜旋轉" };
-        transitionButtons.clear();
-        for (int i = 0; i < transNames.length; i++) {
-            final int tIndex = i;
-            Button tBtn = button(transNames[i], tIndex == selectedTransition ? ACTIVE_CHIP : PANEL);
-            tBtn.setTextSize(13);
-            tBtn.setOnClickListener(new View.OnClickListener() {
-                @Override
-                public void onClick(View view) {
-                    setTransition(tIndex);
-                }
-            });
-            transitionButtons.add(tBtn);
-            LinearLayout.LayoutParams tParams = new LinearLayout.LayoutParams(0, dp(36), 1);
-
-            if (i < 3) {
-                if (i < 2) tParams.setMargins(0, 0, dp(6), 0);
-                transRow1.addView(tBtn, tParams);
-            } else {
-                if (i < 5) tParams.setMargins(0, 0, dp(6), 0);
-                transRow2.addView(tBtn, tParams);
+        LinearLayout locationRow = new LinearLayout(this);
+        locationRow.setGravity(Gravity.CENTER_VERTICAL);
+        weatherLocationText = text("", 14, SECONDARY);
+        updateWeatherLocationText();
+        Button chooseLocation = button("選擇地點", PANEL);
+        chooseLocation.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                showWeatherLocationSearch();
             }
-        }
-        mainSection.addView(transRow1);
-        mainSection.addView(transRow2);
+        });
+        locationRow.addView(weatherLocationText, new LinearLayout.LayoutParams(0, dp(40), 1));
+        locationRow.addView(chooseLocation, new LinearLayout.LayoutParams(dp(110), dp(38)));
+        weatherOptions.addView(locationRow);
 
-        // --- 時鐘字體風格選單 ---
-        TextView fontHeader = text("🔤 時鐘字體風格", 16, PRIMARY);
-        fontHeader.setTypeface(Typeface.DEFAULT_BOLD);
-        fontHeader.setPadding(0, dp(4), 0, dp(4));
-        mainSection.addView(fontHeader);
+        weatherLocationCheck = checkBox("顯示英文地名", weatherShowLocation);
+        weatherOptions.addView(weatherLocationCheck);
 
-        LinearLayout fontRow1 = new LinearLayout(this);
-        fontRow1.setGravity(Gravity.CENTER_VERTICAL);
-        fontRow1.setPadding(0, 0, 0, dp(4));
-
-        LinearLayout fontRow2 = new LinearLayout(this);
-        fontRow2.setGravity(Gravity.CENTER_VERTICAL);
-        fontRow2.setPadding(0, 0, 0, dp(4));
-
-        LinearLayout fontRow3 = new LinearLayout(this);
-        fontRow3.setGravity(Gravity.CENTER_VERTICAL);
-        fontRow3.setPadding(0, 0, 0, dp(4));
-
-        LinearLayout fontRow4 = new LinearLayout(this);
-        fontRow4.setGravity(Gravity.CENTER_VERTICAL);
-        fontRow4.setPadding(0, 0, 0, dp(6));
-
-        final String[] fontNames = {
-                "預設粗體", "經典電子鐘", "經典黑體",
-                "經典宋體", "柔和圓體", "文雅楷體",
-                "重磅厚黑", "Orbitron", "Audiowide",
-                "Oxanium", "Saira Stencil", "Zen Dots"
-        };
-        fontStyleButtons.clear();
-        for (int i = 0; i < fontNames.length; i++) {
-            final int styleIndex = i;
-            Button fontBtn = button(fontNames[i], styleIndex == selectedFontStyle ? ACTIVE_CHIP : PANEL);
-            fontBtn.setTextSize(13);
-            fontBtn.setOnClickListener(new View.OnClickListener() {
-                @Override
-                public void onClick(View view) {
-                    setFontStyle(styleIndex);
-                }
-            });
-            fontStyleButtons.add(fontBtn);
-            LinearLayout.LayoutParams fontParams = new LinearLayout.LayoutParams(0, dp(36), 1);
-
-            if (i < 3) {
-                if (i < 2) fontParams.setMargins(0, 0, dp(6), 0);
-                fontRow1.addView(fontBtn, fontParams);
-            } else if (i < 6) {
-                if (i < 5) fontParams.setMargins(0, 0, dp(6), 0);
-                fontRow2.addView(fontBtn, fontParams);
-            } else if (i < 9) {
-                if (i < 8) fontParams.setMargins(0, 0, dp(6), 0);
-                fontRow3.addView(fontBtn, fontParams);
-            } else {
-                if (i < 11) fontParams.setMargins(0, 0, dp(6), 0);
-                fontRow4.addView(fontBtn, fontParams);
+        weatherCompactCheck = checkBox(
+                "精簡排列（無地名時與日期同列）", weatherCompactMode);
+        weatherCompactCheck.setEnabled(!weatherShowLocation);
+        weatherCompactCheck.setAlpha(weatherShowLocation ? 0.45f : 1.0f);
+        weatherOptions.addView(weatherCompactCheck);
+        weatherLocationCheck.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                boolean available = !weatherLocationCheck.isChecked();
+                weatherCompactCheck.setEnabled(available);
+                weatherCompactCheck.setAlpha(available ? 1.0f : 0.45f);
             }
-        }
-        mainSection.addView(fontRow1);
-        mainSection.addView(fontRow2);
-        mainSection.addView(fontRow3);
-        mainSection.addView(fontRow4);
+        });
+        TextView weatherCredit = text("天氣資料：Open-Meteo", 12, SECONDARY);
+        weatherCredit.setPadding(dp(4), 0, dp(4), dp(4));
+        weatherOptions.addView(weatherCredit);
+        mainSection.addView(weatherOptions);
 
-        clockBgCheck = new CheckBox(this);
-        clockBgCheck.setText("顯示時間日期區塊半透明底板");
-        clockBgCheck.setTextColor(PRIMARY);
-        clockBgCheck.setTextSize(15);
-        clockBgCheck.setChecked(clockBgEnabled);
-        clockBgCheck.setPadding(dp(4), dp(2), dp(4), dp(2));
+        weatherEnabledCheck.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                weatherOptions.setVisibility(
+                        weatherEnabledCheck.isChecked() ? View.VISIBLE : View.GONE);
+            }
+        });
+
+        lowPowerCheck = checkBox("低耗電模式（建議）", lowPowerMode);
+        mainSection.addView(lowPowerCheck);
+
+        clockBgCheck = checkBox("時間底板", clockBgEnabled);
         mainSection.addView(clockBgCheck);
 
-        autoStartCheck = new CheckBox(this);
-        autoStartCheck.setText("🔌 插上電源/充電時自動啟動數位相框");
-        autoStartCheck.setTextColor(PRIMARY);
-        autoStartCheck.setTextSize(15);
-        autoStartCheck.setChecked(autoStartCharging);
-        autoStartCheck.setPadding(dp(4), dp(2), dp(4), dp(2));
-        mainSection.addView(autoStartCheck);
-
-        // --- 夜間定時暗屏時段控制 ---
-        nightModeCheck = new CheckBox(this);
-        nightModeCheck.setText("🌙 啟動夜間護眼定時暗屏休眠");
-        nightModeCheck.setTextColor(PRIMARY);
-        nightModeCheck.setTextSize(15);
-        nightModeCheck.setChecked(nightModeEnabled);
-        nightModeCheck.setPadding(dp(4), dp(2), dp(4), dp(2));
+        nightModeCheck = checkBox("排程暗屏", nightModeEnabled);
         mainSection.addView(nightModeCheck);
-
-        LinearLayout nightTimeRow = new LinearLayout(this);
-        nightTimeRow.setGravity(Gravity.CENTER_VERTICAL);
-        nightTimeRow.setPadding(dp(8), dp(4), dp(8), dp(6));
 
         nightScheduleText = text("", 15, ACCENT);
         nightScheduleText.setTypeface(Typeface.DEFAULT_BOLD);
+        nightScheduleText.setPadding(dp(8), dp(4), dp(8), 0);
+        mainSection.addView(nightScheduleText, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(32)));
 
-        Button startMinus = button("始－", PANEL);
+        LinearLayout nightControls = new LinearLayout(this);
+        nightControls.setGravity(Gravity.CENTER_VERTICAL);
+        nightControls.setPadding(dp(8), 0, dp(8), dp(6));
+
+        TextView startLabel = text("開始", 14, SECONDARY);
+        TextView endLabel = text("結束", 14, SECONDARY);
+
+        Button startMinus = button("−", PANEL);
         startMinus.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
@@ -504,7 +528,7 @@ public final class SettingsActivity extends Activity {
             }
         });
 
-        Button startPlus = button("始＋", PANEL);
+        Button startPlus = button("+", PANEL);
         startPlus.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
@@ -513,7 +537,7 @@ public final class SettingsActivity extends Activity {
             }
         });
 
-        Button endMinus = button("終－", PANEL);
+        Button endMinus = button("−", PANEL);
         endMinus.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
@@ -522,7 +546,7 @@ public final class SettingsActivity extends Activity {
             }
         });
 
-        Button endPlus = button("終＋", PANEL);
+        Button endPlus = button("+", PANEL);
         endPlus.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
@@ -531,29 +555,93 @@ public final class SettingsActivity extends Activity {
             }
         });
 
-        nightTimeRow.addView(nightScheduleText, new LinearLayout.LayoutParams(0, dp(38), 1));
-        nightTimeRow.addView(startMinus, new LinearLayout.LayoutParams(dp(54), dp(36)));
-        LinearLayout.LayoutParams p1 = new LinearLayout.LayoutParams(dp(54), dp(36));
+        nightControls.addView(startLabel, new LinearLayout.LayoutParams(0, dp(36), 1));
+        nightControls.addView(startMinus, new LinearLayout.LayoutParams(dp(44), dp(36)));
+        LinearLayout.LayoutParams p1 = new LinearLayout.LayoutParams(dp(44), dp(36));
         p1.setMargins(dp(4), 0, 0, 0);
-        nightTimeRow.addView(startPlus, p1);
+        nightControls.addView(startPlus, p1);
 
-        LinearLayout.LayoutParams p2 = new LinearLayout.LayoutParams(dp(54), dp(36));
+        LinearLayout.LayoutParams endLabelParams = new LinearLayout.LayoutParams(0, dp(36), 1);
+        endLabelParams.setMargins(dp(16), 0, 0, 0);
+        nightControls.addView(endLabel, endLabelParams);
+
+        LinearLayout.LayoutParams p2 = new LinearLayout.LayoutParams(dp(44), dp(36));
         p2.setMargins(dp(12), 0, 0, 0);
-        nightTimeRow.addView(endMinus, p2);
+        nightControls.addView(endMinus, p2);
 
-        LinearLayout.LayoutParams p3 = new LinearLayout.LayoutParams(dp(54), dp(36));
+        LinearLayout.LayoutParams p3 = new LinearLayout.LayoutParams(dp(44), dp(36));
         p3.setMargins(dp(4), 0, 0, 0);
-        nightTimeRow.addView(endPlus, p3);
+        nightControls.addView(endPlus, p3);
 
-        mainSection.addView(nightTimeRow);
+        mainSection.addView(nightControls);
         updateNightText();
+
+        final LinearLayout advancedOptions = new LinearLayout(this);
+        advancedOptions.setOrientation(LinearLayout.VERTICAL);
+        advancedOptions.setVisibility(View.GONE);
+
+        adaptiveColorCheck = checkBox("依相片調整時間色彩", adaptiveColorEnabled);
+        advancedOptions.addView(adaptiveColorCheck);
+
+        polaroidFrameCheck = checkBox("白色相框", polaroidFrameEnabled);
+        advancedOptions.addView(polaroidFrameCheck);
+
+        smartFocusCheck = checkBox("智慧取景", smartFocusEnabled);
+        advancedOptions.addView(smartFocusCheck);
+
+        burnInCheck = checkBox("防烙印微移", burnInEnabled);
+        advancedOptions.addView(burnInCheck);
+
+        if (hasLightSensor()) {
+            autoBrightnessCheck = checkBox("環境光自動亮度", autoBrightnessEnabled);
+            advancedOptions.addView(autoBrightnessCheck);
+        }
+
+        favoritesOnlyCheck = checkBox("只播放收藏相片", favoritesOnly);
+        advancedOptions.addView(favoritesOnlyCheck);
+
+        Button clearHidden = button("重新顯示已隱藏相片", PANEL);
+        clearHidden.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                getSharedPreferences(PREFERENCES, MODE_PRIVATE)
+                        .edit().remove(HIDDEN_PHOTOS).apply();
+                Toast.makeText(SettingsActivity.this,
+                        "已清除隱藏清單", Toast.LENGTH_SHORT).show();
+            }
+        });
+        advancedOptions.addView(clearHidden, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(38)));
+
+        final Button advancedToggle = button("顯示進階設定", PANEL);
+        advancedToggle.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                boolean show = advancedOptions.getVisibility() != View.VISIBLE;
+                advancedOptions.setVisibility(show ? View.VISIBLE : View.GONE);
+                advancedToggle.setText(show ? "收合進階設定" : "顯示進階設定");
+            }
+        });
+        LinearLayout.LayoutParams advancedParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(38));
+        advancedParams.setMargins(0, dp(6), 0, dp(4));
+        mainSection.addView(advancedToggle, advancedParams);
+        mainSection.addView(advancedOptions);
 
         LinearLayout.LayoutParams secParams = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
         secParams.setMargins(0, dp(6), 0, dp(10));
         root.addView(mainSection, secParams);
 
-        // --- 區塊二：相簿資料夾選擇 ---
+        // 相簿資料夾選擇。
+        LinearLayout albumHeader = new LinearLayout(this);
+        albumHeader.setGravity(Gravity.CENTER_VERTICAL);
+        TextView albumTitle = text("相簿", 17, PRIMARY);
+        albumTitle.setTypeface(Typeface.DEFAULT_BOLD);
+        albumHeader.addView(albumTitle, new LinearLayout.LayoutParams(0, dp(36), 1));
+        albumHeader.addView(selectionText, new LinearLayout.LayoutParams(0, dp(36), 2));
+        root.addView(albumHeader);
+
         LinearLayout pathRow = new LinearLayout(this);
         pathRow.setGravity(Gravity.CENTER_VERTICAL);
         Button up = button("上一層", PANEL);
@@ -596,6 +684,28 @@ public final class SettingsActivity extends Activity {
         return outerScroll;
     }
 
+    private void applySystemBarInsets(final View view) {
+        if (Build.VERSION.SDK_INT < 20) {
+            return;
+        }
+        final int initialLeft = view.getPaddingLeft();
+        final int initialTop = view.getPaddingTop();
+        final int initialRight = view.getPaddingRight();
+        final int initialBottom = view.getPaddingBottom();
+        view.setOnApplyWindowInsetsListener(new View.OnApplyWindowInsetsListener() {
+            @Override
+            public WindowInsets onApplyWindowInsets(View target, WindowInsets insets) {
+                target.setPadding(
+                        initialLeft + insets.getSystemWindowInsetLeft(),
+                        initialTop + insets.getSystemWindowInsetTop(),
+                        initialRight + insets.getSystemWindowInsetRight(),
+                        initialBottom + insets.getSystemWindowInsetBottom());
+                return insets;
+            }
+        });
+        view.requestApplyInsets();
+    }
+
     private void updateNightText() {
         if (nightScheduleText != null) {
             nightScheduleText.setText(String.format(Locale.TAIWAN,
@@ -603,26 +713,173 @@ public final class SettingsActivity extends Activity {
         }
     }
 
-    private void setTransition(int tIndex) {
-        selectedTransition = tIndex;
-        for (int i = 0; i < transitionButtons.size(); i++) {
-            Button btn = transitionButtons.get(i);
-            GradientDrawable bg = new GradientDrawable();
-            bg.setColor(i == selectedTransition ? ACTIVE_CHIP : PANEL);
-            bg.setCornerRadius(dp(8));
-            btn.setBackground(bg);
+    private void updateWeatherLocationText() {
+        if (weatherLocationText != null) {
+            weatherLocationText.setText(weatherLocationName.length() == 0
+                    ? "尚未選擇地點" : weatherLocationName);
         }
     }
 
-    private void setFontStyle(int styleIndex) {
-        selectedFontStyle = styleIndex;
-        for (int i = 0; i < fontStyleButtons.size(); i++) {
-            Button btn = fontStyleButtons.get(i);
-            GradientDrawable bg = new GradientDrawable();
-            bg.setColor(i == selectedFontStyle ? ACTIVE_CHIP : PANEL);
-            bg.setCornerRadius(dp(8));
-            btn.setBackground(bg);
+    private void showWeatherLocationSearch() {
+        if (!WeatherClient.isWifiConnected(this)) {
+            Toast.makeText(this, "請先連接 Wi-Fi", Toast.LENGTH_SHORT).show();
+            return;
         }
+        final EditText input = new EditText(this);
+        input.setSingleLine(true);
+        input.setHint("例如 Taipei、Tainan");
+        input.setPadding(dp(18), dp(8), dp(18), dp(8));
+        new AlertDialog.Builder(this)
+                .setTitle("搜尋英文地名")
+                .setView(input)
+                .setNegativeButton("取消", null)
+                .setPositiveButton("搜尋", new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface dialog, int which) {
+                        String query = input.getText().toString().trim();
+                        if (query.length() < 2) {
+                            Toast.makeText(SettingsActivity.this,
+                                    "請輸入至少兩個字元", Toast.LENGTH_SHORT).show();
+                            return;
+                        }
+                        searchWeatherLocations(query);
+                    }
+                })
+                .show();
+    }
+
+    private void searchWeatherLocations(final String query) {
+        Toast.makeText(this, "正在搜尋地點…", Toast.LENGTH_SHORT).show();
+        networkExecutor.execute(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    final List<WeatherClient.LocationResult> results =
+                            WeatherClient.searchLocations(query);
+                    runOnUiThread(new Runnable() {
+                        @Override
+                        public void run() {
+                            if (isFinishing()) return;
+                            showWeatherLocationResults(results);
+                        }
+                    });
+                } catch (final Exception error) {
+                    runOnUiThread(new Runnable() {
+                        @Override
+                        public void run() {
+                            if (!isFinishing()) {
+                                Toast.makeText(SettingsActivity.this,
+                                        "搜尋失敗，請確認 Wi-Fi 與系統時間",
+                                        Toast.LENGTH_LONG).show();
+                            }
+                        }
+                    });
+                }
+            }
+        });
+    }
+
+    private void showWeatherLocationResults(final List<WeatherClient.LocationResult> results) {
+        if (results.isEmpty()) {
+            Toast.makeText(this, "找不到地點", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        String[] names = new String[results.size()];
+        for (int i = 0; i < results.size(); i++) names[i] = results.get(i).displayName;
+        new AlertDialog.Builder(this)
+                .setTitle("選擇地點")
+                .setItems(names, new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface dialog, int which) {
+                        WeatherClient.LocationResult selected = results.get(which);
+                        weatherLocationName = selected.displayName;
+                        weatherLatitude = selected.latitude;
+                        weatherLongitude = selected.longitude;
+                        weatherTimezone = selected.timezone;
+                        weatherLocationChanged = true;
+                        updateWeatherLocationText();
+                    }
+                })
+                .setNegativeButton("取消", null)
+                .show();
+    }
+
+    private double parseDouble(String value) {
+        if (value == null) return Double.NaN;
+        try {
+            return Double.parseDouble(value);
+        } catch (NumberFormatException ignored) {
+            return Double.NaN;
+        }
+    }
+
+    private Spinner addSpinner(LinearLayout parent, String label, String[] items, int selectedIndex) {
+        LinearLayout row = new LinearLayout(this);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+
+        TextView labelView = text(label, 16, PRIMARY);
+        labelView.setTypeface(Typeface.DEFAULT_BOLD);
+
+        Spinner spinner = new Spinner(this);
+        ArrayAdapter<String> adapter = new CompactSpinnerAdapter(items);
+        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        spinner.setAdapter(adapter);
+        spinner.setSelection(Math.max(0, Math.min(items.length - 1, selectedIndex)));
+
+        row.addView(labelView, new LinearLayout.LayoutParams(0, dp(38), 1));
+        row.addView(spinner, new LinearLayout.LayoutParams(0, dp(38), 2));
+        parent.addView(row);
+        return spinner;
+    }
+
+    private final class CompactSpinnerAdapter extends ArrayAdapter<String> {
+        CompactSpinnerAdapter(String[] items) {
+            super(SettingsActivity.this, android.R.layout.simple_spinner_item, items);
+        }
+
+        @Override
+        public View getView(int position, View convertView, ViewGroup parent) {
+            View view = super.getView(position, convertView, parent);
+            compact(view, false);
+            return view;
+        }
+
+        @Override
+        public View getDropDownView(int position, View convertView, ViewGroup parent) {
+            View view = super.getDropDownView(position, convertView, parent);
+            compact(view, true);
+            return view;
+        }
+
+        private void compact(View view, boolean dropDown) {
+            if (view instanceof TextView) {
+                TextView textView = (TextView) view;
+                textView.setTextSize(15);
+                textView.setGravity(Gravity.CENTER_VERTICAL);
+                textView.setMinHeight(0);
+                textView.setMinimumHeight(0);
+                textView.setPadding(dp(dropDown ? 12 : 8), 0, dp(12), 0);
+            }
+            if (dropDown) {
+                view.setLayoutParams(new AbsListView.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT, dp(38)));
+            }
+        }
+    }
+
+    private CheckBox checkBox(String label, boolean checked) {
+        CheckBox checkBox = new CheckBox(this);
+        checkBox.setText(label);
+        checkBox.setTextColor(PRIMARY);
+        checkBox.setTextSize(15);
+        checkBox.setChecked(checked);
+        checkBox.setPadding(dp(4), dp(2), dp(4), dp(2));
+        return checkBox;
+    }
+
+    private boolean hasLightSensor() {
+        SensorManager manager = (SensorManager) getSystemService(Context.SENSOR_SERVICE);
+        return manager != null && manager.getDefaultSensor(Sensor.TYPE_LIGHT) != null;
     }
 
     private void setInterval(int value) {
@@ -632,7 +889,7 @@ public final class SettingsActivity extends Activity {
 
     private void updateIntervalDisplay() {
         if (intervalDisplay != null) {
-            intervalDisplay.setText(selectedInterval + " 秒");
+            intervalDisplay.setText(String.format(Locale.TAIWAN, "%d 秒", selectedInterval));
         }
     }
 
@@ -640,7 +897,7 @@ public final class SettingsActivity extends Activity {
         folderList.removeAllViews();
 
         if (currentDirectory == null) {
-            pathText.setText("💾 儲存裝置選擇");
+            pathText.setText("選擇儲存裝置");
             currentFolderCheck.setVisibility(View.GONE);
 
             List<StorageVolumeItem> volumes = getAvailableStorageVolumes();
@@ -739,7 +996,7 @@ public final class SettingsActivity extends Activity {
                 LinearLayout.LayoutParams.WRAP_CONTENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT));
 
-        TextView name = text("📁  " + directory.getName(), 17, PRIMARY);
+        TextView name = text(directory.getName(), 17, PRIMARY);
         name.setPadding(dp(10), dp(6), dp(10), dp(6));
         name.setOnClickListener(new View.OnClickListener() {
             @Override
@@ -767,29 +1024,58 @@ public final class SettingsActivity extends Activity {
     }
 
     private void updateSelectionSummary() {
-        selectionText.setText("已選 " + selectedFolders.size() + " 個相簿");
+        if (selectedFolders.isEmpty()) {
+            selectionText.setText("所有可存取相片");
+        } else {
+            selectionText.setText(String.format(
+                    Locale.TAIWAN, "已選 %d 個相簿", selectedFolders.size()));
+        }
     }
 
     private void saveSettings() {
-        if (selectedFolders.isEmpty()) {
-            Toast.makeText(this, "請至少勾選一個照片資料夾", Toast.LENGTH_SHORT).show();
+        int fontIndex = Math.max(0, Math.min(
+                fontOptions.size() - 1, fontSpinner.getSelectedItemPosition()));
+        selectedFontId = fontOptions.get(fontIndex).id;
+        selectedTransition = Math.max(0, Math.min(5, transitionSpinner.getSelectedItemPosition()));
+        selectedDisplayMode = Math.max(0, Math.min(2, displayModeSpinner.getSelectedItemPosition()));
+        if (weatherEnabledCheck.isChecked()
+                && (Double.isNaN(weatherLatitude) || Double.isNaN(weatherLongitude))) {
+            Toast.makeText(this, "請先選擇天氣地點", Toast.LENGTH_SHORT).show();
             return;
         }
-        getSharedPreferences(PREFERENCES, MODE_PRIVATE)
-                .edit()
+        android.content.SharedPreferences.Editor editor =
+                getSharedPreferences(PREFERENCES, MODE_PRIVATE).edit()
                 .putInt(PHOTO_INTERVAL_SECONDS, selectedInterval)
                 .putBoolean(CLOCK_BACKGROUND_ENABLED, clockBgCheck.isChecked())
-                .putInt(CLOCK_FONT_STYLE, selectedFontStyle)
-                .putBoolean(AUTO_START_CHARGING, autoStartCheck.isChecked())
+                .putString(CLOCK_FONT_ID, selectedFontId)
                 .putBoolean(NIGHT_MODE_ENABLED, nightModeCheck.isChecked())
                 .putInt(NIGHT_START_HOUR, nightStartHour)
                 .putInt(NIGHT_END_HOUR, nightEndHour)
                 .putInt(TRANSITION_TYPE, selectedTransition)
+                .putInt(PHOTO_DISPLAY_MODE, selectedDisplayMode)
+                .putBoolean(LOW_POWER_MODE, lowPowerCheck.isChecked())
                 .putBoolean(ADAPTIVE_COLOR_ENABLED, adaptiveColorCheck.isChecked())
                 .putBoolean(POLAROID_FRAME_ENABLED, polaroidFrameCheck.isChecked())
                 .putBoolean(SMART_FOCUS_ENABLED, smartFocusCheck.isChecked())
-                .putStringSet(PHOTO_FOLDERS, new HashSet<String>(selectedFolders))
-                .apply();
+                .putBoolean(BURN_IN_ENABLED, burnInCheck.isChecked())
+                .putBoolean(AUTO_BRIGHTNESS_ENABLED,
+                        autoBrightnessCheck != null && autoBrightnessCheck.isChecked())
+                .putBoolean(FAVORITES_ONLY, favoritesOnlyCheck.isChecked())
+                .putBoolean(WEATHER_ENABLED, weatherEnabledCheck.isChecked())
+                .putBoolean(WEATHER_SHOW_LOCATION, weatherLocationCheck.isChecked())
+                .putBoolean(WEATHER_COMPACT_MODE, weatherCompactCheck.isChecked())
+                .putString(WEATHER_LOCATION_NAME, weatherLocationName)
+                .putString(WEATHER_LATITUDE, Double.toString(weatherLatitude))
+                .putString(WEATHER_LONGITUDE, Double.toString(weatherLongitude))
+                .putString(WEATHER_TIMEZONE, weatherTimezone)
+                .putStringSet(PHOTO_FOLDERS, new HashSet<String>(selectedFolders));
+        if (weatherLocationChanged) {
+            editor.remove(WEATHER_TEMPERATURE)
+                    .remove(WEATHER_CODE)
+                    .remove(WEATHER_IS_DAY)
+                    .remove(WEATHER_UPDATED_AT);
+        }
+        editor.apply();
         finish();
     }
 
