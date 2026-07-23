@@ -961,11 +961,12 @@ public final class PhotoClockActivity extends Activity {
                 new int[] {},
                 rounded(Color.argb(68, 35, 52, 62)));
         settingsButton.setBackground(folderBg);
-        settingsButton.setOnClickListener(new View.OnClickListener() {
+        settingsButton.setOnLongClickListener(new View.OnLongClickListener() {
             @Override
-            public void onClick(View view) {
+            public boolean onLongClick(View view) {
                 photoHandler.removeCallbacks(hideImmersiveRunnable);
                 startActivity(new Intent(PhotoClockActivity.this, SettingsActivity.class));
+                return true;
             }
         });
 

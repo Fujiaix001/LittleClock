@@ -999,12 +999,11 @@ public final class SettingsActivity extends Activity {
         TextView name = text(volume.label, 17, ACCENT);
         name.setTypeface(Typeface.DEFAULT_BOLD);
         name.setPadding(dp(10), dp(4), dp(10), dp(4));
-        name.setOnLongClickListener(new View.OnLongClickListener() {
+        name.setOnClickListener(new View.OnClickListener() {
             @Override
-            public boolean onLongClick(View view) {
+            public void onClick(View view) {
                 currentDirectory = volume.rootDir;
                 showDirectory();
-                return true;
             }
         });
         row.addView(name, new LinearLayout.LayoutParams(
@@ -1031,12 +1030,11 @@ public final class SettingsActivity extends Activity {
 
         TextView name = text(directory.getName(), 17, PRIMARY);
         name.setPadding(dp(10), dp(4), dp(10), dp(4));
-        name.setOnLongClickListener(new View.OnLongClickListener() {
+        name.setOnClickListener(new View.OnClickListener() {
             @Override
-            public boolean onLongClick(View view) {
+            public void onClick(View view) {
                 currentDirectory = directory;
                 showDirectory();
-                return true;
             }
         });
         row.addView(name, new LinearLayout.LayoutParams(
