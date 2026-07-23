@@ -486,9 +486,20 @@ public final class PhotoClockActivity extends Activity {
                 "隱藏此相片",
                 "取消"
         };
+
+        android.widget.ArrayAdapter<String> adapter = new android.widget.ArrayAdapter<String>(this, android.R.layout.select_dialog_item, actions) {
+            @Override
+            public View getView(int position, View convertView, android.view.ViewGroup parent) {
+                TextView view = (TextView) super.getView(position, convertView, parent);
+                view.setPadding(dp(16), dp(8), dp(16), dp(8));
+                view.setMinHeight(0); // Override default minHeight on older Android
+                return view;
+            }
+        };
+
         new AlertDialog.Builder(this)
                 .setTitle("相片操作")
-                .setItems(actions, new android.content.DialogInterface.OnClickListener() {
+                .setAdapter(adapter, new android.content.DialogInterface.OnClickListener() {
                     @Override
                     public void onClick(android.content.DialogInterface dialog, int which) {
                         if (which == 0) {
@@ -961,12 +972,11 @@ public final class PhotoClockActivity extends Activity {
                 new int[] {},
                 rounded(Color.argb(68, 35, 52, 62)));
         settingsButton.setBackground(folderBg);
-        settingsButton.setOnLongClickListener(new View.OnLongClickListener() {
+        settingsButton.setOnClickListener(new View.OnClickListener() {
             @Override
-            public boolean onLongClick(View view) {
+            public void onClick(View view) {
                 photoHandler.removeCallbacks(hideImmersiveRunnable);
                 startActivity(new Intent(PhotoClockActivity.this, SettingsActivity.class));
-                return true;
             }
         });
 
