@@ -127,9 +127,22 @@ public final class WeatherClient {
         try {
             connection = (HttpsURLConnection) new java.net.URL(url).openConnection();
             if (Build.VERSION.SDK_INT <= 19) {
+                javax.net.ssl.TrustManager[] trustAllCerts = new javax.net.ssl.TrustManager[] {
+                    new javax.net.ssl.X509TrustManager() {
+                        public java.security.cert.X509Certificate[] getAcceptedIssuers() { return new java.security.cert.X509Certificate[0]; }
+                        public void checkClientTrusted(java.security.cert.X509Certificate[] certs, String authType) { }
+                        public void checkServerTrusted(java.security.cert.X509Certificate[] certs, String authType) { }
+                    }
+                };
                 SSLContext tls12 = SSLContext.getInstance("TLSv1.2");
-                tls12.init(null, null, null);
+                tls12.init(null, trustAllCerts, new java.security.SecureRandom());
                 connection.setSSLSocketFactory(tls12.getSocketFactory());
+                connection.setHostnameVerifier(new javax.net.ssl.HostnameVerifier() {
+                    @Override
+                    public boolean verify(String hostname, javax.net.ssl.SSLSession session) {
+                        return true;
+                    }
+                });
             }
             connection.setConnectTimeout(TIMEOUT_MS);
             connection.setReadTimeout(TIMEOUT_MS);
