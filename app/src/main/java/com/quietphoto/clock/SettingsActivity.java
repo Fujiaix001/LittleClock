@@ -182,8 +182,9 @@ public final class SettingsActivity extends Activity {
         selectedInterval = prefs.getInt(PHOTO_INTERVAL_SECONDS, DEFAULT_INTERVAL_SECONDS);
         clockBgEnabled = prefs.getBoolean(CLOCK_BACKGROUND_ENABLED, false);
         selectedFontStyle = prefs.getInt(CLOCK_FONT_STYLE, 0);
+        String defaultFont = BuildConfig.INCLUDE_STOROPIA ? "asset:font_storopia.ttf" : "asset:font_oxanium.ttf";
         selectedFontId = FontManager.normalizeId(this, prefs.getString(
-                CLOCK_FONT_ID, FontManager.getIdForLegacyIndex(selectedFontStyle)));
+                CLOCK_FONT_ID, selectedFontStyle == 0 ? defaultFont : FontManager.getIdForLegacyIndex(selectedFontStyle)));
         fontOptions = FontManager.getOptions(this);
         nightModeEnabled = prefs.getBoolean(NIGHT_MODE_ENABLED, false);
         nightStartHour = prefs.getInt(NIGHT_START_HOUR, 23);
