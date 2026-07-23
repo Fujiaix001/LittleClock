@@ -447,8 +447,8 @@ public final class SettingsActivity extends Activity {
             }
         });
 
-        presetsRow.addView(minus, new LinearLayout.LayoutParams(dp(44), dp(38)));
-        LinearLayout.LayoutParams plusParams = new LinearLayout.LayoutParams(dp(44), dp(38));
+        presetsRow.addView(minus, new LinearLayout.LayoutParams(dp(36), dp(32)));
+        LinearLayout.LayoutParams plusParams = new LinearLayout.LayoutParams(dp(36), dp(32));
         plusParams.setMargins(dp(4), 0, 0, 0);
         presetsRow.addView(plus, plusParams);
         mainSection.addView(presetsRow);
@@ -582,20 +582,20 @@ public final class SettingsActivity extends Activity {
         });
 
         nightControls.addView(startLabel, new LinearLayout.LayoutParams(0, dp(36), 1));
-        nightControls.addView(startMinus, new LinearLayout.LayoutParams(dp(44), dp(36)));
-        LinearLayout.LayoutParams p1 = new LinearLayout.LayoutParams(dp(44), dp(36));
+        nightControls.addView(startMinus, new LinearLayout.LayoutParams(dp(36), dp(32)));
+        LinearLayout.LayoutParams p1 = new LinearLayout.LayoutParams(dp(36), dp(32));
         p1.setMargins(dp(4), 0, 0, 0);
         nightControls.addView(startPlus, p1);
 
-        LinearLayout.LayoutParams endLabelParams = new LinearLayout.LayoutParams(0, dp(36), 1);
+        LinearLayout.LayoutParams endLabelParams = new LinearLayout.LayoutParams(0, dp(32), 1);
         endLabelParams.setMargins(dp(16), 0, 0, 0);
         nightControls.addView(endLabel, endLabelParams);
 
-        LinearLayout.LayoutParams p2 = new LinearLayout.LayoutParams(dp(44), dp(36));
+        LinearLayout.LayoutParams p2 = new LinearLayout.LayoutParams(dp(36), dp(32));
         p2.setMargins(dp(12), 0, 0, 0);
         nightControls.addView(endMinus, p2);
 
-        LinearLayout.LayoutParams p3 = new LinearLayout.LayoutParams(dp(44), dp(36));
+        LinearLayout.LayoutParams p3 = new LinearLayout.LayoutParams(dp(36), dp(32));
         p3.setMargins(dp(4), 0, 0, 0);
         nightControls.addView(endPlus, p3);
 
@@ -688,6 +688,8 @@ public final class SettingsActivity extends Activity {
         currentFolderCheck.setTextColor(PRIMARY);
         currentFolderCheck.setTextSize(16);
         currentFolderCheck.setPadding(dp(8), dp(4), dp(8), dp(4));
+        currentFolderCheck.setScaleX(0.85f);
+        currentFolderCheck.setScaleY(0.85f);
         currentFolderCheck.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
@@ -701,6 +703,8 @@ public final class SettingsActivity extends Activity {
 
         folderList = new LinearLayout(this);
         folderList.setOrientation(LinearLayout.VERTICAL);
+        folderList.setBackground(panelBackground());
+        folderList.setPadding(0, dp(8), 0, dp(8));
         root.addView(folderList, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT));
@@ -900,6 +904,8 @@ public final class SettingsActivity extends Activity {
         checkBox.setTextSize(15);
         checkBox.setChecked(checked);
         checkBox.setPadding(dp(4), dp(2), dp(4), dp(2));
+        checkBox.setScaleX(0.85f);
+        checkBox.setScaleY(0.85f);
         return checkBox;
     }
 
@@ -976,7 +982,7 @@ public final class SettingsActivity extends Activity {
     private View storageVolumeRow(final StorageVolumeItem volume) {
         LinearLayout row = new LinearLayout(this);
         row.setGravity(Gravity.CENTER_VERTICAL);
-        row.setPadding(dp(8), dp(6), dp(8), dp(6));
+        row.setPadding(dp(8), dp(2), dp(8), dp(2));
 
         final CheckBox check = new CheckBox(this);
         check.setChecked(selectedFolders.contains(volume.rootDir.getAbsolutePath()));
@@ -992,12 +998,13 @@ public final class SettingsActivity extends Activity {
 
         TextView name = text(volume.label, 17, ACCENT);
         name.setTypeface(Typeface.DEFAULT_BOLD);
-        name.setPadding(dp(10), dp(8), dp(10), dp(8));
-        name.setOnClickListener(new View.OnClickListener() {
+        name.setPadding(dp(10), dp(4), dp(10), dp(4));
+        name.setOnLongClickListener(new View.OnLongClickListener() {
             @Override
-            public void onClick(View view) {
+            public boolean onLongClick(View view) {
                 currentDirectory = volume.rootDir;
                 showDirectory();
+                return true;
             }
         });
         row.addView(name, new LinearLayout.LayoutParams(
@@ -1008,7 +1015,7 @@ public final class SettingsActivity extends Activity {
     private View folderRow(final File directory) {
         LinearLayout row = new LinearLayout(this);
         row.setGravity(Gravity.CENTER_VERTICAL);
-        row.setPadding(dp(8), dp(4), dp(8), dp(4));
+        row.setPadding(dp(8), dp(2), dp(8), dp(2));
 
         final CheckBox check = new CheckBox(this);
         check.setChecked(selectedFolders.contains(directory.getAbsolutePath()));
@@ -1023,12 +1030,13 @@ public final class SettingsActivity extends Activity {
                 LinearLayout.LayoutParams.WRAP_CONTENT));
 
         TextView name = text(directory.getName(), 17, PRIMARY);
-        name.setPadding(dp(10), dp(6), dp(10), dp(6));
-        name.setOnClickListener(new View.OnClickListener() {
+        name.setPadding(dp(10), dp(4), dp(10), dp(4));
+        name.setOnLongClickListener(new View.OnLongClickListener() {
             @Override
-            public void onClick(View view) {
+            public boolean onLongClick(View view) {
                 currentDirectory = directory;
                 showDirectory();
+                return true;
             }
         });
         row.addView(name, new LinearLayout.LayoutParams(

@@ -2,6 +2,10 @@ plugins {
     id("com.android.application")
 }
 
+val versionMajor = 2
+val versionMinor = 2
+val basePatch = 6
+
 android {
     namespace = "com.quietphoto.clock"
     compileSdk = 36
@@ -10,22 +14,23 @@ android {
         applicationId = "com.quietphoto.clock"
         minSdk = 17
         targetSdk = 36
-        versionCode = 224
-        versionName = "2.2.4"
+        versionCode = (versionMajor * 100) + (versionMinor * 10) + basePatch
+        versionName = "$versionMajor.$versionMinor.$basePatch"
     }
 
     flavorDimensions += "fontBundle"
     productFlavors {
         create("storopiaTest") {
             dimension = "fontBundle"
-            versionCode = 224
-            versionName = "2.2.4-test-android4.2-storopia"
+            versionCode = (versionMajor * 100) + (versionMinor * 10) + basePatch
+            versionName = "$versionMajor.$versionMinor.$basePatch-test-android4.2-storopia"
             buildConfigField("boolean", "INCLUDE_STOROPIA", "true")
         }
         create("standard") {
             dimension = "fontBundle"
-            versionCode = 224
-            versionName = "2.2.4"
+            val standardPatch = basePatch + 1
+            versionCode = (versionMajor * 100) + (versionMinor * 10) + standardPatch
+            versionName = "$versionMajor.$versionMinor.$standardPatch"
             buildConfigField("boolean", "INCLUDE_STOROPIA", "false")
         }
     }
@@ -35,7 +40,12 @@ android {
             isMinifyEnabled = false
         }
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
             signingConfig = signingConfigs.getByName("debug")
         }
     }

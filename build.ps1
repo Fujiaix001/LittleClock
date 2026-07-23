@@ -3,16 +3,22 @@ $ErrorActionPreference = 'Stop'
 $projectRoot = $PSScriptRoot
 $dist = Join-Path $projectRoot 'dist'
 $buildConfig = Join-Path $projectRoot 'app\build.gradle.kts'
+$content = Get-Content -Raw $buildConfig
+$versionMajor = [regex]::Match($content, 'val versionMajor = (\d+)').Groups[1].Value
+$versionMinor = [regex]::Match($content, 'val versionMinor = (\d+)').Groups[1].Value
+$basePatch = [int][regex]::Match($content, 'val basePatch = (\d+)').Groups[1].Value
+$standardPatch = $basePatch + 1
+
 $variants = @(
     @{
         Gradle = 'StoropiaTestRelease'
         Source = 'storopiaTest\release\app-storopiaTest-release.apk'
-        Name = 'LittleClock-v2.2.4-test-android4.2-storopia.apk'
+        Name = "LittleClock-v${versionMajor}.${versionMinor}.${basePatch}-test-android4.2-storopia.apk"
     },
     @{
         Gradle = 'StandardRelease'
         Source = 'standard\release\app-standard-release.apk'
-        Name = 'LittleClock-v2.2.4.apk'
+        Name = "LittleClock-v${versionMajor}.${versionMinor}.${standardPatch}.apk"
     }
 )
 
