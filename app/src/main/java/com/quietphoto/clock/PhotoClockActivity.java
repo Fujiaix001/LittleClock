@@ -308,7 +308,7 @@ public final class PhotoClockActivity extends Activity {
     }
 
     private void extractDefaultWallpapers() {
-        if (prefs.getBoolean("wallpaper_extracted", false)) {
+        if (prefs.getBoolean("wallpaper_extracted_internal", false)) {
             return;
         }
         new Thread(new Runnable() {
@@ -351,7 +351,7 @@ public final class PhotoClockActivity extends Activity {
                             }
                         });
                     }
-                    prefs.edit().putBoolean("wallpaper_extracted", true).apply();
+                    prefs.edit().putBoolean("wallpaper_extracted_internal", true).apply();
                 } catch (Exception e) {
                     e.printStackTrace();
                 }
@@ -1608,9 +1608,27 @@ public final class PhotoClockActivity extends Activity {
             @Override
             public void run() {
                 android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_BACKGROUND);
-                List<PhotoSource> found = Build.VERSION.SDK_INT >= 29
-                        ? queryMediaStore(selectedFolders)
-                        : scanLegacyFolders(selectedFolders);
+                List<PhotoSource> found = new ArrayList<PhotoSource>();
+                if (Build.VERSION.SDK_INT >= 29) {
+                    Set<String> externalFolders = new HashSet<String>();
+                    Set<String> internalFolders = new HashSet<String>();
+                    String internalPath = getFilesDir().getAbsolutePath();
+                    for (String folder : selectedFolders) {
+                        if (folder.startsWith(internalPath)) {
+                            internalFolders.add(folder);
+                        } else {
+                            externalFolders.add(folder);
+                        }
+                    }
+                    if (!externalFolders.isEmpty()) {
+                        found.addAll(queryMediaStore(externalFolders));
+                    }
+                    if (!internalFolders.isEmpty()) {
+                        found.addAll(scanLegacyFolders(internalFolders));
+                    }
+                } else {
+                    found.addAll(scanLegacyFolders(selectedFolders));
+                }
                 final List<PhotoSource> discovered = filterPhotos(
                         found, favoriteSnapshot, hiddenSnapshot, favoritesOnlySnapshot);
 
