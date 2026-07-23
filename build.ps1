@@ -7,12 +7,12 @@ $variants = @(
     @{
         Gradle = 'StoropiaTestRelease'
         Source = 'storopiaTest\release\app-storopiaTest-release.apk'
-        Name = 'LittleClock-v2.2.0-test-storopia.apk'
+        Name = 'LittleClock-v2.2.2-test-storopia.apk'
     },
     @{
         Gradle = 'StandardRelease'
         Source = 'standard\release\app-standard-release.apk'
-        Name = 'LittleClock-v2.2.1.apk'
+        Name = 'LittleClock-v2.2.2.apk'
     }
 )
 

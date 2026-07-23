@@ -58,6 +58,17 @@ public final class FontManager {
     private FontManager() {
     }
 
+    public static synchronized void prefetch(final Context context) {
+        if (optionCache != null) return;
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_BACKGROUND);
+                getOptions(context);
+            }
+        }).start();
+    }
+
     public static synchronized List<FontOption> getOptions(Context context) {
         if (optionCache != null) {
             return new ArrayList<FontOption>(optionCache);

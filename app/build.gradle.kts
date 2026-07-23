@@ -10,22 +10,22 @@ android {
         applicationId = "com.quietphoto.clock"
         minSdk = 17
         targetSdk = 36
-        versionCode = 220
-        versionName = "2.2.0"
+        versionCode = 222
+        versionName = "2.2.2"
     }
 
     flavorDimensions += "fontBundle"
     productFlavors {
         create("storopiaTest") {
             dimension = "fontBundle"
-            versionCode = 220
-            versionName = "2.2.0-test"
+            versionCode = 222
+            versionName = "2.2.2-test-storopia"
             buildConfigField("boolean", "INCLUDE_STOROPIA", "true")
         }
         create("standard") {
             dimension = "fontBundle"
-            versionCode = 221
-            versionName = "2.2.1"
+            versionCode = 222
+            versionName = "2.2.2"
             buildConfigField("boolean", "INCLUDE_STOROPIA", "false")
         }
     }

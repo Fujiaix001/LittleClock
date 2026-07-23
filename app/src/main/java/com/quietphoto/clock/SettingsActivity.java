@@ -12,6 +12,7 @@ import android.hardware.SensorManager;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
+import android.os.Handler;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
@@ -143,6 +144,18 @@ public final class SettingsActivity extends Activity {
     private Spinner displayModeSpinner;
     private final ExecutorService networkExecutor = Executors.newSingleThreadExecutor();
 
+    private float displayDensity;
+    private final Handler keepAliveHandler = new Handler();
+    private final Runnable keepAliveRunnable = new Runnable() {
+        @Override
+        public void run() {
+            if (!isFinishing() && selectionText != null) {
+                selectionText.invalidate();
+                keepAliveHandler.postDelayed(this, 15000);
+            }
+        }
+    };
+
     private static class StorageVolumeItem {
         final String label;
         final File rootDir;
@@ -156,6 +169,7 @@ public final class SettingsActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        displayDensity = getResources().getDisplayMetrics().density;
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         getWindow().setFlags(
                 WindowManager.LayoutParams.FLAG_FULLSCREEN,
@@ -204,6 +218,18 @@ public final class SettingsActivity extends Activity {
     protected void onDestroy() {
         networkExecutor.shutdownNow();
         super.onDestroy();
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        keepAliveHandler.postDelayed(keepAliveRunnable, 15000);
+    }
+
+    @Override
+    protected void onPause() {
+        keepAliveHandler.removeCallbacks(keepAliveRunnable);
+        super.onPause();
     }
 
     @Override
@@ -1108,6 +1134,6 @@ public final class SettingsActivity extends Activity {
     }
 
     private int dp(int value) {
-        return (int) (value * getResources().getDisplayMetrics().density + 0.5f);
+        return (int) (value * displayDensity + 0.5f);
     }
 }

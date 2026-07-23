@@ -294,6 +294,7 @@ public final class PhotoClockActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        FontManager.prefetch(this.getApplicationContext());
         prefs = getSharedPreferences(SettingsActivity.PREFERENCES, MODE_PRIVATE);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
 
