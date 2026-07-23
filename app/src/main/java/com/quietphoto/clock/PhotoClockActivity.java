@@ -315,11 +315,7 @@ public final class PhotoClockActivity extends Activity {
             @Override
             public void run() {
                 try {
-                    java.io.File targetDir = getExternalFilesDir(android.os.Environment.DIRECTORY_PICTURES);
-                    if (targetDir == null) {
-                        targetDir = getFilesDir();
-                    }
-                    targetDir = new java.io.File(targetDir, "數位風景");
+                    java.io.File targetDir = new java.io.File(getFilesDir(), "數位風景");
                     if (!targetDir.exists()) {
                         targetDir.mkdirs();
                     }
@@ -349,7 +345,7 @@ public final class PhotoClockActivity extends Activity {
                         runOnUiThread(new Runnable() {
                             @Override
                             public void run() {
-                                if (activityResumed && hasPhotoReadAccess()) {
+                                if (activityResumed) {
                                     startPhotoSlideshow();
                                 }
                             }
@@ -369,11 +365,9 @@ public final class PhotoClockActivity extends Activity {
         activityResumed = true;
         hideSystemUI();
         loadSettingsConfig();
+        startPhotoSlideshow();
         if (hasPhotoReadAccess()) {
-            startPhotoSlideshow();
             registerMediaObserver();
-        } else {
-            showPhotoStatus("需要相片讀取權限", WARNING);
         }
         registerLightSensor();
         scheduleBurnIn();

@@ -297,6 +297,12 @@ public final class SettingsActivity extends Activity {
         List<StorageVolumeItem> volumes = new ArrayList<StorageVolumeItem>();
         Set<String> addedPaths = new HashSet<String>();
 
+        File internalAssets = new File(getFilesDir(), "數位風景");
+        if (internalAssets.exists()) {
+            volumes.add(new StorageVolumeItem("🖼️ 內建精選數位風景", internalAssets));
+            addedPaths.add(internalAssets.getAbsolutePath());
+        }
+
         File primary = Environment.getExternalStorageDirectory();
         if (primary != null && primary.exists()) {
             volumes.add(new StorageVolumeItem("內建儲存空間", primary));
