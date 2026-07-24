@@ -99,8 +99,12 @@ public final class WeatherClient {
             String admin = item.optString("admin1", "").trim();
             String country = item.optString("country", "").trim();
             StringBuilder display = new StringBuilder(name);
-            if (admin.length() > 0 && !admin.equalsIgnoreCase(name)) display.append(", ").append(admin);
-            if (country.length() > 0) display.append(", ").append(country);
+            if (admin.length() > 0 && !admin.equalsIgnoreCase(name) && !admin.equalsIgnoreCase(country)) {
+                display.append(", ").append(admin);
+            }
+            if (country.length() > 0 && !country.equalsIgnoreCase(name)) {
+                display.append(", ").append(country);
+            }
             locations.add(new LocationResult(
                     display.toString(),
                     item.getDouble("latitude"),
