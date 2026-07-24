@@ -501,6 +501,9 @@ public final class PhotoClockActivity extends Activity {
 
     @Override
     public boolean dispatchTouchEvent(MotionEvent event) {
+        if (scaleGestureDetector != null) {
+            scaleGestureDetector.onTouchEvent(event);
+        }
         if (photoGestureDetector != null && event.getPointerCount() == 1
                 && !isDraggingClock && !isScalingClock) {
             photoGestureDetector.onTouchEvent(event);
@@ -1103,9 +1106,6 @@ public final class PhotoClockActivity extends Activity {
             @Override
             public boolean onTouch(View view, MotionEvent event) {
                 resetImmersiveTimeout();
-                if (scaleGestureDetector != null) {
-                    scaleGestureDetector.onTouchEvent(event);
-                }
 
                 if (event.getPointerCount() > 1 || isScalingClock) {
                     if (isDraggingClock) {
