@@ -701,7 +701,13 @@ public final class SettingsActivity extends Activity {
             @Override
             public void onClick(View view) {
                 if (currentDirectory != null) {
-                    setSelected(currentDirectory, currentFolderCheck.isChecked());
+                    boolean isChecked = selectedFolders.contains(currentDirectory.getAbsolutePath());
+                    boolean hasChildSelected = isAnyChildSelected(currentDirectory);
+                    if (!isChecked && hasChildSelected) {
+                        setSelected(currentDirectory, true);
+                    } else {
+                        setSelected(currentDirectory, currentFolderCheck.isChecked());
+                    }
                 }
             }
         });
@@ -953,7 +959,10 @@ public final class SettingsActivity extends Activity {
         } else {
             currentFolderCheck.setVisibility(View.VISIBLE);
             pathText.setText(currentDirectory.getAbsolutePath());
-            currentFolderCheck.setChecked(selectedFolders.contains(currentDirectory.getAbsolutePath()));
+            boolean isChecked = selectedFolders.contains(currentDirectory.getAbsolutePath());
+            boolean hasChildSelected = isAnyChildSelected(currentDirectory);
+            currentFolderCheck.setChecked(isChecked || hasChildSelected);
+            currentFolderCheck.setAlpha(isChecked ? 1.0f : (hasChildSelected ? 0.5f : 1.0f));
 
             File[] entries = currentDirectory.listFiles();
             List<File> directories = new ArrayList<File>();
@@ -992,11 +1001,18 @@ public final class SettingsActivity extends Activity {
         row.setPadding(dp(8), dp(2), dp(8), dp(2));
 
         final CheckBox check = new CheckBox(this);
-        check.setChecked(selectedFolders.contains(volume.rootDir.getAbsolutePath()));
+        final boolean isChecked = selectedFolders.contains(volume.rootDir.getAbsolutePath());
+        final boolean hasChildSelected = isAnyChildSelected(volume.rootDir);
+        check.setChecked(isChecked || hasChildSelected);
+        check.setAlpha(isChecked ? 1.0f : (hasChildSelected ? 0.5f : 1.0f));
         check.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
-                setSelected(volume.rootDir, check.isChecked());
+                if (!isChecked && hasChildSelected) {
+                    setSelected(volume.rootDir, true);
+                } else {
+                    setSelected(volume.rootDir, check.isChecked());
+                }
             }
         });
         row.addView(check, new LinearLayout.LayoutParams(
@@ -1024,11 +1040,18 @@ public final class SettingsActivity extends Activity {
         row.setPadding(dp(8), dp(2), dp(8), dp(2));
 
         final CheckBox check = new CheckBox(this);
-        check.setChecked(selectedFolders.contains(directory.getAbsolutePath()));
+        final boolean isChecked = selectedFolders.contains(directory.getAbsolutePath());
+        final boolean hasChildSelected = isAnyChildSelected(directory);
+        check.setChecked(isChecked || hasChildSelected);
+        check.setAlpha(isChecked ? 1.0f : (hasChildSelected ? 0.5f : 1.0f));
         check.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
-                setSelected(directory, check.isChecked());
+                if (!isChecked && hasChildSelected) {
+                    setSelected(directory, true);
+                } else {
+                    setSelected(directory, check.isChecked());
+                }
             }
         });
         row.addView(check, new LinearLayout.LayoutParams(
@@ -1049,6 +1072,17 @@ public final class SettingsActivity extends Activity {
         return row;
     }
 
+    private boolean isAnyChildSelected(File directory) {
+        if (directory == null) return false;
+        String prefix = directory.getAbsolutePath() + File.separator;
+        for (String selected : selectedFolders) {
+            if (selected.startsWith(prefix)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private void setSelected(File directory, boolean selected) {
         String path = directory.getAbsolutePath();
         if (selected) {
@@ -1056,10 +1090,23 @@ public final class SettingsActivity extends Activity {
         } else {
             selectedFolders.remove(path);
         }
+        
+        java.util.Iterator<String> it = selectedFolders.iterator();
+        String prefix = path + File.separator;
+        while (it.hasNext()) {
+            if (it.next().startsWith(prefix)) {
+                it.remove();
+            }
+        }
+        
         if (currentDirectory != null) {
-            currentFolderCheck.setChecked(selectedFolders.contains(currentDirectory.getAbsolutePath()));
+            boolean isChecked = selectedFolders.contains(currentDirectory.getAbsolutePath());
+            boolean hasChildSelected = isAnyChildSelected(currentDirectory);
+            currentFolderCheck.setChecked(isChecked || hasChildSelected);
+            currentFolderCheck.setAlpha(isChecked ? 1.0f : (hasChildSelected ? 0.5f : 1.0f));
         }
         updateSelectionSummary();
+        showDirectory();
     }
 
     private void updateSelectionSummary() {
