@@ -930,7 +930,7 @@ public final class PhotoClockActivity extends Activity {
 
         dateRow = new LinearLayout(this);
         dateRow.setOrientation(LinearLayout.HORIZONTAL);
-        dateRow.setGravity(Gravity.CENTER);
+        dateRow.setGravity(Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
 
         photoDate = new TextView(this);
         photoDate.setTextSize(24);
@@ -940,7 +940,7 @@ public final class PhotoClockActivity extends Activity {
         photoDate.setShadowLayer(dp(2), dp(1), dp(1), Color.BLACK);
         compactWeatherRow = new LinearLayout(this);
         compactWeatherRow.setOrientation(LinearLayout.HORIZONTAL);
-        compactWeatherRow.setGravity(Gravity.CENTER_VERTICAL);
+        compactWeatherRow.setGravity(Gravity.BOTTOM);
         compactWeatherRow.setVisibility(View.GONE);
 
         compactWeatherIcon = new WeatherIconView(this);
@@ -961,7 +961,8 @@ public final class PhotoClockActivity extends Activity {
         LinearLayout.LayoutParams compactWeatherParams = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT);
-        compactWeatherParams.setMargins(0, 0, dp(9), 0);
+        compactWeatherParams.gravity = Gravity.BOTTOM;
+        compactWeatherParams.setMargins(0, 0, dp(9), dp(3));
         dateRow.addView(compactWeatherRow, compactWeatherParams);
         dateRow.addView(photoDate, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT,
@@ -969,7 +970,7 @@ public final class PhotoClockActivity extends Activity {
 
         alarmRow = new LinearLayout(this);
         alarmRow.setOrientation(LinearLayout.HORIZONTAL);
-        alarmRow.setGravity(Gravity.CENTER_VERTICAL);
+        alarmRow.setGravity(Gravity.BOTTOM);
         alarmRow.setVisibility(View.GONE);
 
         alarmIcon = new AlarmIconView(this);
@@ -990,7 +991,8 @@ public final class PhotoClockActivity extends Activity {
         LinearLayout.LayoutParams alarmParams = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT);
-        alarmParams.setMargins(dp(10), 0, 0, 0);
+        alarmParams.gravity = Gravity.BOTTOM;
+        alarmParams.setMargins(dp(10), 0, 0, dp(3));
         dateRow.addView(alarmRow, alarmParams);
 
         clockPanel.addView(dateRow, new LinearLayout.LayoutParams(
