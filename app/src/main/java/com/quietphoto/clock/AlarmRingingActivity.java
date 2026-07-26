@@ -70,9 +70,15 @@ public class AlarmRingingActivity extends Activity {
         cardBg.setStroke(dp(1), 0x33FFFFFF);
         card.setBackground(cardBg);
 
-        // Alarm Icon & Title
+        AlarmIconView alarmIcon = new AlarmIconView(this);
+        alarmIcon.setIconColor(0xFF4FC3F7);
+        LinearLayout.LayoutParams iconParams = new LinearLayout.LayoutParams(dp(44), dp(44));
+        iconParams.setMargins(0, 0, 0, dp(8));
+        card.addView(alarmIcon, iconParams);
+
+        // Title
         TextView title = new TextView(this);
-        title.setText("⏰  鬧 鐘 響 起");
+        title.setText("鬧 鐘 響 起");
         title.setTextSize(22);
         title.setTextColor(0xFF4FC3F7); // Accent Cyan
         title.setTypeface(Typeface.DEFAULT_BOLD);

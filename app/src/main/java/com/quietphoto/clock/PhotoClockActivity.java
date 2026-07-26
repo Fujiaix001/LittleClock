@@ -95,7 +95,9 @@ public final class PhotoClockActivity extends Activity {
     private WeatherIconView weatherIcon;
     private TextView weatherTemperature;
     private TextView weatherLocation;
-    private TextView alarmIndicator;
+    private LinearLayout alarmRow;
+    private AlarmIconView alarmIcon;
+    private TextView alarmTimeText;
     private Button settingsButton;
 
     private Bitmap photoBitmap;
@@ -965,18 +967,31 @@ public final class PhotoClockActivity extends Activity {
                 LinearLayout.LayoutParams.WRAP_CONTENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT));
 
-        alarmIndicator = new TextView(this);
-        alarmIndicator.setTextSize(14);
-        alarmIndicator.setTextColor(0xFF4FC3F7);
-        alarmIndicator.setIncludeFontPadding(false);
-        alarmIndicator.setShadowLayer(dp(2), dp(1), dp(1), Color.BLACK);
-        alarmIndicator.setVisibility(View.GONE);
+        alarmRow = new LinearLayout(this);
+        alarmRow.setOrientation(LinearLayout.HORIZONTAL);
+        alarmRow.setGravity(Gravity.CENTER_VERTICAL);
+        alarmRow.setVisibility(View.GONE);
+
+        alarmIcon = new AlarmIconView(this);
+        alarmRow.addView(alarmIcon, new LinearLayout.LayoutParams(dp(16), dp(16)));
+
+        alarmTimeText = new TextView(this);
+        alarmTimeText.setTextSize(14);
+        alarmTimeText.setTextColor(0xFF4FC3F7);
+        alarmTimeText.setIncludeFontPadding(false);
+        alarmTimeText.setShadowLayer(dp(2), dp(1), dp(1), Color.BLACK);
+
+        LinearLayout.LayoutParams textParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+        textParams.setMargins(dp(3), 0, 0, 0);
+        alarmRow.addView(alarmTimeText, textParams);
 
         LinearLayout.LayoutParams alarmParams = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT);
         alarmParams.setMargins(dp(10), 0, 0, 0);
-        dateRow.addView(alarmIndicator, alarmParams);
+        dateRow.addView(alarmRow, alarmParams);
 
         clockPanel.addView(dateRow, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT,
@@ -1511,13 +1526,13 @@ public final class PhotoClockActivity extends Activity {
     }
 
     private void updateAlarmIndicator() {
-        if (alarmIndicator == null) return;
+        if (alarmRow == null || alarmTimeText == null) return;
         String alarmTime = AlarmHelper.getNextAlarmTimeString(this);
         if (alarmTime != null) {
-            alarmIndicator.setText("⏰ " + alarmTime);
-            alarmIndicator.setVisibility(View.VISIBLE);
+            alarmTimeText.setText(alarmTime);
+            alarmRow.setVisibility(View.VISIBLE);
         } else {
-            alarmIndicator.setVisibility(View.GONE);
+            alarmRow.setVisibility(View.GONE);
         }
     }
 

@@ -545,7 +545,7 @@ public final class SettingsActivity extends Activity {
         lowPowerCheck = checkBox("低耗電模式（建議）", lowPowerMode);
         mainSection.addView(lowPowerCheck);
 
-        alarmEnabledCheck = checkBox("開啟鬧鐘 ⏰", alarmEnabled);
+        alarmEnabledCheck = checkBox("開啟鬧鐘", alarmEnabled);
         mainSection.addView(alarmEnabledCheck);
 
         final LinearLayout alarmOptions = new LinearLayout(this);
