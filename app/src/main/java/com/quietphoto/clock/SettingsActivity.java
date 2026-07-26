@@ -117,6 +117,11 @@ public final class SettingsActivity extends Activity {
     private double weatherLongitude = Double.NaN;
     private boolean weatherLocationChanged;
 
+    private boolean alarmEnabled;
+    private int alarmHour = 7;
+    private int alarmMinute = 0;
+    private boolean alarmRepeat = true;
+
     private File currentDirectory;
 
     private TextView pathText;
@@ -135,8 +140,11 @@ public final class SettingsActivity extends Activity {
     private CheckBox weatherEnabledCheck;
     private CheckBox weatherLocationCheck;
     private CheckBox weatherCompactCheck;
+    private CheckBox alarmEnabledCheck;
+    private CheckBox alarmRepeatCheck;
     private TextView nightScheduleText;
     private TextView weatherLocationText;
+    private TextView alarmTimeDisplay;
     private LinearLayout folderList;
 
     private Spinner fontSpinner;
@@ -205,6 +213,10 @@ public final class SettingsActivity extends Activity {
         weatherTimezone = prefs.getString(WEATHER_TIMEZONE, "auto");
         weatherLatitude = parseDouble(prefs.getString(WEATHER_LATITUDE, null));
         weatherLongitude = parseDouble(prefs.getString(WEATHER_LONGITUDE, null));
+        alarmEnabled = prefs.getBoolean(AlarmHelper.PREF_ALARM_ENABLED, false);
+        alarmHour = prefs.getInt(AlarmHelper.PREF_ALARM_HOUR, 7);
+        alarmMinute = prefs.getInt(AlarmHelper.PREF_ALARM_MINUTE, 0);
+        alarmRepeat = prefs.getBoolean(AlarmHelper.PREF_ALARM_REPEAT, true);
 
         Set<String> saved = prefs.getStringSet(PHOTO_FOLDERS, null);
         if (saved != null && !saved.isEmpty()) {
@@ -532,6 +544,86 @@ public final class SettingsActivity extends Activity {
 
         lowPowerCheck = checkBox("低耗電模式（建議）", lowPowerMode);
         mainSection.addView(lowPowerCheck);
+
+        alarmEnabledCheck = checkBox("開啟鬧鐘 ⏰", alarmEnabled);
+        mainSection.addView(alarmEnabledCheck);
+
+        final LinearLayout alarmOptions = new LinearLayout(this);
+        alarmOptions.setOrientation(LinearLayout.VERTICAL);
+        alarmOptions.setPadding(dp(8), 0, dp(8), dp(6));
+        alarmOptions.setVisibility(alarmEnabled ? View.VISIBLE : View.GONE);
+
+        alarmTimeDisplay = text("", 16, ACCENT);
+        alarmTimeDisplay.setTypeface(Typeface.DEFAULT_BOLD);
+        alarmTimeDisplay.setPadding(dp(8), dp(4), dp(8), dp(4));
+        updateAlarmTimeText();
+
+        LinearLayout alarmTimeControls = new LinearLayout(this);
+        alarmTimeControls.setGravity(Gravity.CENTER_VERTICAL);
+        alarmTimeControls.setPadding(dp(8), 0, dp(8), dp(6));
+
+        TextView hourLabel = text("小時", 14, SECONDARY);
+        Button hourMinus = button("−", PANEL);
+        hourMinus.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                alarmHour = (alarmHour + 23) % 24;
+                updateAlarmTimeText();
+            }
+        });
+        Button hourPlus = button("+", PANEL);
+        hourPlus.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                alarmHour = (alarmHour + 1) % 24;
+                updateAlarmTimeText();
+            }
+        });
+
+        TextView minLabel = text("分鐘", 14, SECONDARY);
+        minLabel.setPadding(dp(12), 0, 0, 0);
+        Button minMinus = button("−", PANEL);
+        minMinus.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                alarmMinute = (alarmMinute + 55) % 60;
+                updateAlarmTimeText();
+            }
+        });
+        Button minPlus = button("+", PANEL);
+        minPlus.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                alarmMinute = (alarmMinute + 5) % 60;
+                updateAlarmTimeText();
+            }
+        });
+
+        LinearLayout.LayoutParams btnParams = new LinearLayout.LayoutParams(dp(36), dp(36));
+        btnParams.setMargins(dp(4), 0, dp(4), 0);
+
+        alarmTimeControls.addView(hourLabel);
+        alarmTimeControls.addView(hourMinus, btnParams);
+        alarmTimeControls.addView(hourPlus, btnParams);
+        alarmTimeControls.addView(minLabel);
+        alarmTimeControls.addView(minMinus, btnParams);
+        alarmTimeControls.addView(minPlus, btnParams);
+
+        alarmRepeatCheck = checkBox("每天重複響鈴", alarmRepeat);
+
+        alarmOptions.addView(alarmTimeDisplay);
+        alarmOptions.addView(alarmTimeControls);
+        alarmOptions.addView(alarmRepeatCheck);
+
+        mainSection.addView(alarmOptions);
+
+        alarmEnabledCheck.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                alarmOptions.setVisibility(
+                        alarmEnabledCheck.isChecked() ? View.VISIBLE : View.GONE);
+            }
+        });
 
         clockBgCheck = checkBox("時間底板", clockBgEnabled);
         mainSection.addView(clockBgCheck);
@@ -1154,6 +1246,10 @@ public final class SettingsActivity extends Activity {
                 .putString(WEATHER_LATITUDE, Double.toString(weatherLatitude))
                 .putString(WEATHER_LONGITUDE, Double.toString(weatherLongitude))
                 .putString(WEATHER_TIMEZONE, weatherTimezone)
+                .putBoolean(AlarmHelper.PREF_ALARM_ENABLED, alarmEnabledCheck.isChecked())
+                .putInt(AlarmHelper.PREF_ALARM_HOUR, alarmHour)
+                .putInt(AlarmHelper.PREF_ALARM_MINUTE, alarmMinute)
+                .putBoolean(AlarmHelper.PREF_ALARM_REPEAT, alarmRepeatCheck.isChecked())
                 .putStringSet(PHOTO_FOLDERS, new HashSet<String>(selectedFolders));
         if (weatherLocationChanged) {
             editor.remove(WEATHER_TEMPERATURE)
@@ -1162,7 +1258,15 @@ public final class SettingsActivity extends Activity {
                     .remove(WEATHER_UPDATED_AT);
         }
         editor.apply();
+        AlarmHelper.updateAlarmSchedule(this);
         finish();
+    }
+
+    private void updateAlarmTimeText() {
+        if (alarmTimeDisplay != null) {
+            alarmTimeDisplay.setText(String.format(
+                    Locale.US, "響鈴時間：%02d:%02d", alarmHour, alarmMinute));
+        }
     }
 
     private TextView text(String content, int sizeSp, int color) {

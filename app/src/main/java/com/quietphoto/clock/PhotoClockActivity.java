@@ -95,6 +95,7 @@ public final class PhotoClockActivity extends Activity {
     private WeatherIconView weatherIcon;
     private TextView weatherTemperature;
     private TextView weatherLocation;
+    private TextView alarmIndicator;
     private Button settingsButton;
 
     private Bitmap photoBitmap;
@@ -372,6 +373,7 @@ public final class PhotoClockActivity extends Activity {
         registerLightSensor();
         scheduleBurnIn();
         scheduleWeatherRefresh();
+        updateAlarmIndicator();
         rootContainer.post(new Runnable() {
             @Override
             public void run() {
@@ -962,6 +964,20 @@ public final class PhotoClockActivity extends Activity {
         dateRow.addView(photoDate, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT));
+
+        alarmIndicator = new TextView(this);
+        alarmIndicator.setTextSize(14);
+        alarmIndicator.setTextColor(0xFF4FC3F7);
+        alarmIndicator.setIncludeFontPadding(false);
+        alarmIndicator.setShadowLayer(dp(2), dp(1), dp(1), Color.BLACK);
+        alarmIndicator.setVisibility(View.GONE);
+
+        LinearLayout.LayoutParams alarmParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+        alarmParams.setMargins(dp(10), 0, 0, 0);
+        dateRow.addView(alarmIndicator, alarmParams);
+
         clockPanel.addView(dateRow, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT));
@@ -1490,6 +1506,18 @@ public final class PhotoClockActivity extends Activity {
             } else {
                 photoDate.setText(photoDateFormat.format(nowDate));
             }
+        }
+        updateAlarmIndicator();
+    }
+
+    private void updateAlarmIndicator() {
+        if (alarmIndicator == null) return;
+        String alarmTime = AlarmHelper.getNextAlarmTimeString(this);
+        if (alarmTime != null) {
+            alarmIndicator.setText("⏰ " + alarmTime);
+            alarmIndicator.setVisibility(View.VISIBLE);
+        } else {
+            alarmIndicator.setVisibility(View.GONE);
         }
     }
 
