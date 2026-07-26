@@ -112,6 +112,7 @@ public final class PhotoClockActivity extends Activity {
     private final Date nowDate = new Date();
     private final AccelerateDecelerateInterpolator smoothInterpolator = new AccelerateDecelerateInterpolator();
     private SharedPreferences prefs;
+    private boolean clockTimeEnabled = true;
     private PhotoSource currentPhotoSource;
 
     private final SimpleDateFormat photoTimeFormat =
@@ -709,6 +710,7 @@ public final class PhotoClockActivity extends Activity {
         nightStartHour = prefs.getInt(SettingsActivity.NIGHT_START_HOUR, 23);
         nightEndHour = prefs.getInt(SettingsActivity.NIGHT_END_HOUR, 7);
         transitionType = prefs.getInt(SettingsActivity.TRANSITION_TYPE, 0);
+        clockTimeEnabled = prefs.getBoolean(SettingsActivity.CLOCK_TIME_ENABLED, true);
 
         adaptiveColorEnabled = prefs.getBoolean(SettingsActivity.ADAPTIVE_COLOR_ENABLED, true);
         polaroidFrameEnabled = prefs.getBoolean(SettingsActivity.POLAROID_FRAME_ENABLED, false);
@@ -844,12 +846,14 @@ public final class PhotoClockActivity extends Activity {
 
         if (photoTime != null) {
             photoTime.setTypeface(tf);
+            photoTime.setVisibility(clockTimeEnabled ? View.VISIBLE : View.GONE);
         }
         if (photoDate != null) {
             photoDate.setTypeface(tf);
         }
         if (weatherTemperature != null) weatherTemperature.setTypeface(tf);
         if (compactWeatherTemperature != null) compactWeatherTemperature.setTypeface(tf);
+        if (alarmTimeText != null) alarmTimeText.setTypeface(tf);
         if (weatherLocation != null) weatherLocation.setTypeface(Typeface.SANS_SERIF);
         updatePhotoClock();
 
