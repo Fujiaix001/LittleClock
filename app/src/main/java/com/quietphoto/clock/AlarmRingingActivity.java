@@ -12,6 +12,7 @@ import android.media.RingtoneManager;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Handler;
 import android.os.Vibrator;
 import android.view.Gravity;
 import android.view.View;
@@ -27,6 +28,17 @@ public class AlarmRingingActivity extends Activity {
 
     private MediaPlayer mediaPlayer;
     private Vibrator vibrator;
+    private final Handler handler = new Handler();
+    private static final long AUTO_SNOOZE_TIMEOUT_MS = 15 * 60 * 1000L; // 15 分鐘未操作自動貪睡
+
+    private final Runnable autoSnoozeRunnable = new Runnable() {
+        @Override
+        public void run() {
+            AlarmHelper.scheduleSnooze(AlarmRingingActivity.this, 5);
+            stopRinging();
+            finish();
+        }
+    };
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -35,6 +47,7 @@ public class AlarmRingingActivity extends Activity {
 
         setContentView(buildUI());
         startRingingAndVibrating();
+        handler.postDelayed(autoSnoozeRunnable, AUTO_SNOOZE_TIMEOUT_MS);
     }
 
     private void setupWindowFlags() {
@@ -192,6 +205,7 @@ public class AlarmRingingActivity extends Activity {
     }
 
     private void stopRinging() {
+        handler.removeCallbacks(autoSnoozeRunnable);
         try {
             android.app.NotificationManager nm = (android.app.NotificationManager)
                     getSystemService(Context.NOTIFICATION_SERVICE);
