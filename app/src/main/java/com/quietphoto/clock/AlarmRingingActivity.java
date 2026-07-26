@@ -30,11 +30,10 @@ public class AlarmRingingActivity extends Activity {
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
+        setupWindowFlags();
         super.onCreate(savedInstanceState);
 
-        setupWindowFlags();
         setContentView(buildUI());
-
         startRingingAndVibrating();
     }
 
@@ -157,8 +156,13 @@ public class AlarmRingingActivity extends Activity {
             if (alarmUri == null) {
                 alarmUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION);
             }
+            if (alarmUri == null) {
+                alarmUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE);
+            }
             mediaPlayer = new MediaPlayer();
-            mediaPlayer.setDataSource(this, alarmUri);
+            if (alarmUri != null) {
+                mediaPlayer.setDataSource(this, alarmUri);
+            }
 
             if (Build.VERSION.SDK_INT >= 21) {
                 mediaPlayer.setAudioAttributes(new AudioAttributes.Builder()
@@ -188,6 +192,14 @@ public class AlarmRingingActivity extends Activity {
     }
 
     private void stopRinging() {
+        try {
+            android.app.NotificationManager nm = (android.app.NotificationManager)
+                    getSystemService(Context.NOTIFICATION_SERVICE);
+            if (nm != null) {
+                nm.cancel(1001);
+            }
+        } catch (Exception ignored) {
+        }
         if (mediaPlayer != null) {
             try {
                 if (mediaPlayer.isPlaying()) {

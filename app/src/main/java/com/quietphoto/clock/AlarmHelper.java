@@ -35,13 +35,21 @@ public class AlarmHelper {
     }
 
     public static void scheduleAlarmAt(Context context, int hour, int minute, boolean repeat) {
+        long now = System.currentTimeMillis();
         Calendar cal = Calendar.getInstance();
+        cal.setTimeInMillis(now);
         cal.set(Calendar.HOUR_OF_DAY, hour);
         cal.set(Calendar.MINUTE, minute);
         cal.set(Calendar.SECOND, 0);
         cal.set(Calendar.MILLISECOND, 0);
 
-        if (cal.getTimeInMillis() <= System.currentTimeMillis()) {
+        if (cal.getTimeInMillis() < now) {
+            Calendar nowCal = Calendar.getInstance();
+            nowCal.setTimeInMillis(now);
+            if (nowCal.get(Calendar.HOUR_OF_DAY) == hour && nowCal.get(Calendar.MINUTE) == minute) {
+                setAlarmExact(context, now + 1000L);
+                return;
+            }
             cal.add(Calendar.DAY_OF_YEAR, 1);
         }
 
@@ -53,17 +61,23 @@ public class AlarmHelper {
         setAlarmExact(context, triggerAt);
     }
 
+    @android.annotation.SuppressLint("ScheduleExactAlarm")
     private static void setAlarmExact(Context context, long triggerAtMillis) {
         AlarmManager am = (AlarmManager) context.getSystemService(Context.ALARM_SERVICE);
         if (am == null) return;
 
         PendingIntent pi = getPendingIntent(context);
 
-        if (Build.VERSION.SDK_INT >= 23) {
-            am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAtMillis, pi);
-        } else if (Build.VERSION.SDK_INT >= 19) {
-            am.setExact(AlarmManager.RTC_WAKEUP, triggerAtMillis, pi);
-        } else {
+        try {
+            if (Build.VERSION.SDK_INT >= 23) {
+                am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAtMillis, pi);
+            } else if (Build.VERSION.SDK_INT >= 19) {
+                am.setExact(AlarmManager.RTC_WAKEUP, triggerAtMillis, pi);
+            } else {
+                am.set(AlarmManager.RTC_WAKEUP, triggerAtMillis, pi);
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
             am.set(AlarmManager.RTC_WAKEUP, triggerAtMillis, pi);
         }
     }
