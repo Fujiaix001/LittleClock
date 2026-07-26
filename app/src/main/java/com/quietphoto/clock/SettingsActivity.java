@@ -48,6 +48,7 @@ public final class SettingsActivity extends Activity {
     public static final String CLOCK_X_RATIO = "clock_x_ratio";
     public static final String CLOCK_Y_RATIO = "clock_y_ratio";
     public static final String CLOCK_TIME_ENABLED = "clock_time_enabled";
+    public static final String CLOCK_DATE_ENABLED = "clock_date_enabled";
     public static final String CLOCK_BACKGROUND_ENABLED = "clock_bg_enabled";
     public static final String CLOCK_FONT_STYLE = "clock_font_style";
     public static final String CLOCK_FONT_ID = "clock_font_id";
@@ -93,6 +94,7 @@ public final class SettingsActivity extends Activity {
     private final Set<String> selectedFolders = new LinkedHashSet<String>();
     private int selectedInterval;
     private boolean clockTimeEnabled = true;
+    private boolean clockDateEnabled = true;
     private boolean clockBgEnabled;
     private int selectedFontStyle;
     private String selectedFontId;
@@ -131,6 +133,7 @@ public final class SettingsActivity extends Activity {
     private TextView intervalDisplay;
     private CheckBox nightModeCheck;
     private CheckBox clockTimeCheck;
+    private CheckBox clockDateCheck;
     private CheckBox clockBgCheck;
     private CheckBox adaptiveColorCheck;
     private CheckBox polaroidFrameCheck;
@@ -192,6 +195,7 @@ public final class SettingsActivity extends Activity {
         android.content.SharedPreferences prefs = getSharedPreferences(PREFERENCES, MODE_PRIVATE);
         selectedInterval = prefs.getInt(PHOTO_INTERVAL_SECONDS, DEFAULT_INTERVAL_SECONDS);
         clockTimeEnabled = prefs.getBoolean(CLOCK_TIME_ENABLED, true);
+        clockDateEnabled = prefs.getBoolean(CLOCK_DATE_ENABLED, true);
         clockBgEnabled = prefs.getBoolean(CLOCK_BACKGROUND_ENABLED, false);
         selectedFontStyle = prefs.getInt(CLOCK_FONT_STYLE, 0);
         String defaultFont = BuildConfig.INCLUDE_STOROPIA ? "asset:font_storopia.ttf" : "asset:font_oxanium.ttf";
@@ -631,6 +635,9 @@ public final class SettingsActivity extends Activity {
 
         clockTimeCheck = checkBox("顯示時間", clockTimeEnabled);
         mainSection.addView(clockTimeCheck);
+
+        clockDateCheck = checkBox("顯示日期", clockDateEnabled);
+        mainSection.addView(clockDateCheck);
 
         clockBgCheck = checkBox("時間底板", clockBgEnabled);
         mainSection.addView(clockBgCheck);
@@ -1232,6 +1239,7 @@ public final class SettingsActivity extends Activity {
                 getSharedPreferences(PREFERENCES, MODE_PRIVATE).edit()
                 .putInt(PHOTO_INTERVAL_SECONDS, selectedInterval)
                 .putBoolean(CLOCK_TIME_ENABLED, clockTimeCheck.isChecked())
+                .putBoolean(CLOCK_DATE_ENABLED, clockDateCheck.isChecked())
                 .putBoolean(CLOCK_BACKGROUND_ENABLED, clockBgCheck.isChecked())
                 .putString(CLOCK_FONT_ID, selectedFontId)
                 .putBoolean(NIGHT_MODE_ENABLED, nightModeCheck.isChecked())
