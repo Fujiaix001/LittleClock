@@ -992,7 +992,7 @@ public final class PhotoClockActivity extends Activity {
                 LinearLayout.LayoutParams.WRAP_CONTENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT);
         alarmParams.gravity = Gravity.BOTTOM;
-        alarmParams.setMargins(dp(10), 0, 0, dp(3));
+        alarmParams.setMargins(dp(4), 0, 0, dp(3));
         dateRow.addView(alarmRow, alarmParams);
 
         clockPanel.addView(dateRow, new LinearLayout.LayoutParams(
