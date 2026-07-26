@@ -114,6 +114,7 @@ public final class PhotoClockActivity extends Activity {
     private SharedPreferences prefs;
     private boolean clockTimeEnabled = true;
     private boolean clockDateEnabled = true;
+    private long lastAlarmFiredMinute = -1;
     private PhotoSource currentPhotoSource;
 
     private final SimpleDateFormat photoTimeFormat =
@@ -229,6 +230,7 @@ public final class PhotoClockActivity extends Activity {
                 return;
             }
             updatePhotoClock();
+            checkForegroundAlarm();
             checkNightSleepMode();
             if (!isNightSleepActive && !photoLoading && !photoFiles.isEmpty()
                     && SystemClock.elapsedRealtime() >= nextPhotoAt) {
@@ -1542,6 +1544,32 @@ public final class PhotoClockActivity extends Activity {
             alarmRow.setVisibility(View.VISIBLE);
         } else {
             alarmRow.setVisibility(View.GONE);
+        }
+    }
+
+    private void checkForegroundAlarm() {
+        SharedPreferences p = AlarmHelper.getPrefs(this);
+        if (!p.getBoolean(AlarmHelper.PREF_ALARM_ENABLED, false)) return;
+
+        int alarmH = p.getInt(AlarmHelper.PREF_ALARM_HOUR, 7);
+        int alarmM = p.getInt(AlarmHelper.PREF_ALARM_MINUTE, 0);
+
+        java.util.Calendar now = java.util.Calendar.getInstance();
+        int nowH = now.get(java.util.Calendar.HOUR_OF_DAY);
+        int nowM = now.get(java.util.Calendar.MINUTE);
+
+        long minuteKey = (long) nowH * 60 + nowM;
+        if (nowH == alarmH && nowM == alarmM && lastAlarmFiredMinute != minuteKey) {
+            lastAlarmFiredMinute = minuteKey;
+
+            boolean repeat = p.getBoolean(AlarmHelper.PREF_ALARM_REPEAT, true);
+            if (!repeat) {
+                p.edit().putBoolean(AlarmHelper.PREF_ALARM_ENABLED, false).apply();
+            }
+
+            Intent ringIntent = new Intent(this, AlarmRingingActivity.class);
+            ringIntent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+            startActivity(ringIntent);
         }
     }
 
