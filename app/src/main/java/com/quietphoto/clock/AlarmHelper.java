@@ -21,6 +21,14 @@ public class AlarmHelper {
         return context.getSharedPreferences(SettingsActivity.PREFERENCES, Context.MODE_PRIVATE);
     }
 
+    public static boolean canScheduleExactAlarms(Context context) {
+        if (Build.VERSION.SDK_INT >= 31) {
+            AlarmManager am = (AlarmManager) context.getSystemService(Context.ALARM_SERVICE);
+            return am == null || am.canScheduleExactAlarms();
+        }
+        return true;
+    }
+
     public static void updateAlarmSchedule(Context context) {
         SharedPreferences prefs = getPrefs(context);
         boolean enabled = prefs.getBoolean(PREF_ALARM_ENABLED, false);

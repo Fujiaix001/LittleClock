@@ -628,6 +628,17 @@ public final class SettingsActivity extends Activity {
         alarmEnabledCheck.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
+                if (alarmEnabledCheck.isChecked() && !AlarmHelper.canScheduleExactAlarms(SettingsActivity.this)) {
+                    alarmEnabledCheck.setChecked(false);
+                    if (Build.VERSION.SDK_INT >= 31) {
+                        try {
+                            android.content.Intent intent = new android.content.Intent(
+                                    android.provider.Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM);
+                            intent.setData(android.net.Uri.parse("package:" + getPackageName()));
+                            startActivity(intent);
+                        } catch (Exception ignored) { }
+                    }
+                }
                 alarmOptions.setVisibility(
                         alarmEnabledCheck.isChecked() ? View.VISIBLE : View.GONE);
             }

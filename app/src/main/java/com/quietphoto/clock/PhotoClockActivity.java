@@ -145,6 +145,7 @@ public final class PhotoClockActivity extends Activity {
     private final Runnable nightSleepReDimRunnable = new Runnable() {
         @Override
         public void run() {
+            if (isFinishing() || isDestroyed()) return;
             if (isNightSleepActive && isNightSleepWoken) {
                 isNightSleepWoken = false;
                 enterNightSleepMode();
@@ -229,6 +230,7 @@ public final class PhotoClockActivity extends Activity {
     private final Runnable hideImmersiveRunnable = new Runnable() {
         @Override
         public void run() {
+            if (isFinishing() || isDestroyed()) return;
             hideSystemUI();
         }
     };
@@ -236,7 +238,7 @@ public final class PhotoClockActivity extends Activity {
     private final Runnable photoTicker = new Runnable() {
         @Override
         public void run() {
-            if (!activityResumed) {
+            if (!activityResumed || isFinishing() || isDestroyed()) {
                 return;
             }
             updatePhotoClock();
@@ -250,25 +252,12 @@ public final class PhotoClockActivity extends Activity {
         }
     };
 
-    private final Runnable photoPanTicker = new Runnable() {
-        @Override
-        public void run() {
-            if (!activityResumed || photoBitmap == null || isNightSleepActive) {
-                return;
-            }
-            long elapsed = SystemClock.elapsedRealtime() - photoPanStartedAt;
-            float progress = Math.min(1.0f, (float) elapsed / photoPanDurationMs);
-            applyPhotoPan(progress);
-            if (progress < 1.0f) {
-                photoHandler.postDelayed(this, PHOTO_PAN_FRAME_MS);
-            }
-        }
-    };
+    private android.animation.ValueAnimator photoPanAnimator;
 
     private final Runnable burnInRunnable = new Runnable() {
         @Override
         public void run() {
-            if (!activityResumed || !burnInEnabled) {
+            if (!activityResumed || !burnInEnabled || isFinishing() || isDestroyed()) {
                 return;
             }
             int maxOffset = dp(3);
@@ -282,6 +271,7 @@ public final class PhotoClockActivity extends Activity {
     private final Runnable mediaRefreshRunnable = new Runnable() {
         @Override
         public void run() {
+            if (isFinishing() || isDestroyed()) return;
             if (activityResumed && hasPhotoReadAccess()) {
                 startPhotoSlideshow();
             }
@@ -291,6 +281,7 @@ public final class PhotoClockActivity extends Activity {
     private final Runnable weatherRefreshRunnable = new Runnable() {
         @Override
         public void run() {
+            if (isFinishing() || isDestroyed()) return;
             requestWeatherRefresh();
         }
     };
@@ -1359,7 +1350,7 @@ public final class PhotoClockActivity extends Activity {
 
     private void stopPhotoSlideshow() {
         photoHandler.removeCallbacks(photoTicker);
-        photoHandler.removeCallbacks(photoPanTicker);
+        stopPhotoPan();
         photoGeneration++;
         photoLoading = false;
         if (photoImage != null) {
@@ -1373,14 +1364,10 @@ public final class PhotoClockActivity extends Activity {
             backgroundImage.setVisibility(View.GONE);
         }
         releaseSoftBackground();
-        if (photoBitmap != null && !photoBitmap.isRecycled()) {
-            photoBitmap.recycle();
-            photoBitmap = null;
-        }
-        if (pendingPhotoBitmap != null && !pendingPhotoBitmap.isRecycled()) {
-            pendingPhotoBitmap.recycle();
-            pendingPhotoBitmap = null;
-        }
+        safeRecycle(photoBitmap);
+        photoBitmap = null;
+        safeRecycle(pendingPhotoBitmap);
+        pendingPhotoBitmap = null;
         currentPhotoSource = null;
         startupPhotoDisplayed = false;
         playbackNavigator.reset(0);
@@ -1414,8 +1401,12 @@ public final class PhotoClockActivity extends Activity {
                 runOnUiThread(new Runnable() {
                     @Override
                     public void run() {
+                        if (isFinishing() || isDestroyed()) {
+                            safeRecycle(bitmap);
+                            return;
+                        }
                         if (generation != photoGeneration || !activityResumed || bitmap == null) {
-                            if (bitmap != null && !bitmap.isRecycled()) bitmap.recycle();
+                            safeRecycle(bitmap);
                             return;
                         }
                         currentPhotoSource = source;
@@ -1429,7 +1420,7 @@ public final class PhotoClockActivity extends Activity {
     }
 
     private void startPhotoPan() {
-        photoHandler.removeCallbacks(photoPanTicker);
+        stopPhotoPan();
         if (effectiveDisplayMode() != 0) {
             return;
         }
@@ -1438,13 +1429,32 @@ public final class PhotoClockActivity extends Activity {
             return;
         }
         photoPanReverse = !photoPanReverse;
-        photoPanStartedAt = SystemClock.elapsedRealtime();
-        applyPhotoPan(0.0f);
-        photoHandler.postDelayed(photoPanTicker, PHOTO_PAN_FRAME_MS);
+        photoPanAnimator = android.animation.ValueAnimator.ofFloat(0.0f, 1.0f);
+        photoPanAnimator.setDuration(photoPanDurationMs);
+        photoPanAnimator.setInterpolator(new android.view.animation.LinearInterpolator());
+        photoPanAnimator.addUpdateListener(new android.animation.ValueAnimator.AnimatorUpdateListener() {
+            @Override
+            public void onAnimationUpdate(android.animation.ValueAnimator animation) {
+                if (!activityResumed || photoBitmap == null || isNightSleepActive || isFinishing() || isDestroyed()) {
+                    animation.cancel();
+                    return;
+                }
+                applyPhotoPan((Float) animation.getAnimatedValue());
+            }
+        });
+        photoPanAnimator.start();
     }
 
     private void stopPhotoPan() {
-        photoHandler.removeCallbacks(photoPanTicker);
+        if (photoPanAnimator != null) {
+            photoPanAnimator.cancel();
+        }
+    }
+
+    private void safeRecycle(Bitmap bitmap) {
+        if (bitmap != null && !bitmap.isRecycled() && Build.VERSION.SDK_INT < 21) {
+            bitmap.recycle();
+        }
     }
 
     private void applyPhotoPan(float progress) {
@@ -1543,7 +1553,7 @@ public final class PhotoClockActivity extends Activity {
         if (softBackgroundBitmap != null
                 && softBackgroundBitmap != photoBitmap
                 && !softBackgroundBitmap.isRecycled()) {
-            softBackgroundBitmap.recycle();
+            safeRecycle(softBackgroundBitmap);
         }
         softBackgroundBitmap = null;
     }
@@ -1960,7 +1970,7 @@ public final class PhotoClockActivity extends Activity {
                     } catch (Throwable ignored) {
                     } finally {
                         if (sample != null && sample != bitmap && !sample.isRecycled()) {
-                            sample.recycle();
+                            safeRecycle(sample);
                         }
                     }
                     if (pixels != null) {
@@ -2003,7 +2013,7 @@ public final class PhotoClockActivity extends Activity {
                     public void run() {
                         if (generation != photoGeneration || !activityResumed) {
                             if (bitmap != null && !bitmap.isRecycled()) {
-                                bitmap.recycle();
+                                safeRecycle(bitmap);
                             }
                             return;
                         }
@@ -2083,7 +2093,7 @@ public final class PhotoClockActivity extends Activity {
             Bitmap rotated = Bitmap.createBitmap(
                     bmp, 0, 0, bmp.getWidth(), bmp.getHeight(), matrix, true);
             if (rotated != bmp) {
-                bmp.recycle();
+                safeRecycle(bmp);
                 bmp = rotated;
             }
         } catch (Throwable ignored) {
@@ -2149,7 +2159,7 @@ public final class PhotoClockActivity extends Activity {
         photoStatus.setVisibility(View.GONE);
         if (isNightSleepActive) {
             if (photoBitmap != null && photoBitmap != bitmap && !photoBitmap.isRecycled()) {
-                photoBitmap.recycle();
+                safeRecycle(photoBitmap);
             }
             photoBitmap = bitmap;
             photoImage.setImageBitmap(bitmap);
@@ -2172,7 +2182,7 @@ public final class PhotoClockActivity extends Activity {
         if (pendingPhotoBitmap != null
                 && pendingPhotoBitmap != bitmap
                 && !pendingPhotoBitmap.isRecycled()) {
-            pendingPhotoBitmap.recycle();
+            safeRecycle(pendingPhotoBitmap);
         }
         pendingPhotoBitmap = bitmap;
         final int generation = photoGeneration;
@@ -2187,7 +2197,7 @@ public final class PhotoClockActivity extends Activity {
                         pendingPhotoBitmap = null;
                     }
                     if (!bitmap.isRecycled()) {
-                        bitmap.recycle();
+                        safeRecycle(bitmap);
                     }
                     return;
                 }
@@ -2201,7 +2211,7 @@ public final class PhotoClockActivity extends Activity {
                 startPhotoPan();
 
                 if (previous != null && previous != bitmap && !previous.isRecycled()) {
-                    previous.recycle();
+                    safeRecycle(previous);
                 }
 
                 resetTransformations();

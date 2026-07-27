@@ -2,9 +2,9 @@ plugins {
     id("com.android.application")
 }
 
-val versionMajor = 2
-val versionMinor = 2
-val basePatch = 44
+val versionMajor = 3
+val versionMinor = 0
+val basePatch = 0
 
 android {
     namespace = "com.quietphoto.clock"
