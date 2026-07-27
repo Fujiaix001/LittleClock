@@ -12,7 +12,6 @@ import android.hardware.SensorManager;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
-import android.os.Handler;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
@@ -159,16 +158,6 @@ public final class SettingsActivity extends Activity {
     private final ExecutorService networkExecutor = Executors.newSingleThreadExecutor();
 
     private float displayDensity;
-    private final Handler keepAliveHandler = new Handler();
-    private final Runnable keepAliveRunnable = new Runnable() {
-        @Override
-        public void run() {
-            if (!isFinishing() && selectionText != null) {
-                selectionText.invalidate();
-                keepAliveHandler.postDelayed(this, 15000);
-            }
-        }
-    };
 
     private static class StorageVolumeItem {
         final String label;
@@ -241,17 +230,6 @@ public final class SettingsActivity extends Activity {
         super.onDestroy();
     }
 
-    @Override
-    protected void onResume() {
-        super.onResume();
-        keepAliveHandler.postDelayed(keepAliveRunnable, 15000);
-    }
-
-    @Override
-    protected void onPause() {
-        keepAliveHandler.removeCallbacks(keepAliveRunnable);
-        super.onPause();
-    }
 
     @Override
     public void onWindowFocusChanged(boolean hasFocus) {
@@ -1062,54 +1040,93 @@ public final class SettingsActivity extends Activity {
             pathText.setText("選擇儲存裝置");
             currentFolderCheck.setVisibility(View.GONE);
 
-            List<StorageVolumeItem> volumes = getAvailableStorageVolumes();
-            if (volumes.isEmpty()) {
-                TextView empty = text("無法偵測到可用的儲存裝置", 15, SECONDARY);
-                empty.setGravity(Gravity.CENTER);
-                folderList.addView(empty, new LinearLayout.LayoutParams(
-                        LinearLayout.LayoutParams.MATCH_PARENT, dp(60)));
-            } else {
-                for (final StorageVolumeItem volume : volumes) {
-                    folderList.addView(storageVolumeRow(volume));
-                }
-            }
-        } else {
-            currentFolderCheck.setVisibility(View.VISIBLE);
-            pathText.setText(currentDirectory.getAbsolutePath());
-            boolean isChecked = selectedFolders.contains(currentDirectory.getAbsolutePath());
-            boolean hasChildSelected = isAnyChildSelected(currentDirectory);
-            currentFolderCheck.setChecked(isChecked || hasChildSelected);
-            currentFolderCheck.setAlpha(isChecked ? 1.0f : (hasChildSelected ? 0.5f : 1.0f));
+            // 顯示載入提示
+            final TextView loading = text("正在掃描儲存裝置…", 15, SECONDARY);
+            loading.setGravity(Gravity.CENTER);
+            folderList.addView(loading, new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT, dp(60)));
 
-            File[] entries = currentDirectory.listFiles();
-            List<File> directories = new ArrayList<File>();
-            if (entries != null) {
-                for (File entry : entries) {
-                    if (entry.isDirectory() && !entry.getName().startsWith(".")) {
-                        directories.add(entry);
-                    }
-                }
-            }
-            Collections.sort(directories, new Comparator<File>() {
+            // 在背景執行緒掃描儲存裝置，避免阻塞主執行緒
+            networkExecutor.execute(new Runnable() {
                 @Override
-                public int compare(File left, File right) {
-                    return left.getName().compareToIgnoreCase(right.getName());
+                public void run() {
+                    final List<StorageVolumeItem> volumes = getAvailableStorageVolumes();
+                    runOnUiThread(new Runnable() {
+                        @Override
+                        public void run() {
+                            if (isFinishing()) return;
+                            folderList.removeAllViews();
+                            if (volumes.isEmpty()) {
+                                TextView empty = text("無法偵測到可用的儲存裝置", 15, SECONDARY);
+                                empty.setGravity(Gravity.CENTER);
+                                folderList.addView(empty, new LinearLayout.LayoutParams(
+                                        LinearLayout.LayoutParams.MATCH_PARENT, dp(60)));
+                            } else {
+                                for (final StorageVolumeItem volume : volumes) {
+                                    folderList.addView(storageVolumeRow(volume));
+                                }
+                            }
+                            updateSelectionSummary();
+                        }
+                    });
                 }
             });
-
-            if (directories.isEmpty()) {
-                TextView empty = text("這個位置沒有子資料夾", 15, SECONDARY);
-                empty.setGravity(Gravity.CENTER);
-                folderList.addView(empty, new LinearLayout.LayoutParams(
-                        LinearLayout.LayoutParams.MATCH_PARENT, dp(60)));
-            } else {
-                for (final File directory : directories) {
-                    folderList.addView(folderRow(directory));
-                }
-            }
+            return;
         }
 
-        updateSelectionSummary();
+        currentFolderCheck.setVisibility(View.VISIBLE);
+        pathText.setText(currentDirectory.getAbsolutePath());
+        boolean isChecked = selectedFolders.contains(currentDirectory.getAbsolutePath());
+        boolean hasChildSelected = isAnyChildSelected(currentDirectory);
+        currentFolderCheck.setChecked(isChecked || hasChildSelected);
+        currentFolderCheck.setAlpha(isChecked ? 1.0f : (hasChildSelected ? 0.5f : 1.0f));
+
+        // 顯示載入提示
+        final TextView loading = text("正在讀取資料夾…", 15, SECONDARY);
+        loading.setGravity(Gravity.CENTER);
+        folderList.addView(loading, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(60)));
+
+        // 在背景執行緒掃描子資料夾
+        final File dir = currentDirectory;
+        networkExecutor.execute(new Runnable() {
+            @Override
+            public void run() {
+                File[] entries = dir.listFiles();
+                final List<File> directories = new ArrayList<File>();
+                if (entries != null) {
+                    for (File entry : entries) {
+                        if (entry.isDirectory() && !entry.getName().startsWith(".")) {
+                            directories.add(entry);
+                        }
+                    }
+                }
+                Collections.sort(directories, new Comparator<File>() {
+                    @Override
+                    public int compare(File left, File right) {
+                        return left.getName().compareToIgnoreCase(right.getName());
+                    }
+                });
+                runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        if (isFinishing()) return;
+                        folderList.removeAllViews();
+                        if (directories.isEmpty()) {
+                            TextView empty = text("這個位置沒有子資料夾", 15, SECONDARY);
+                            empty.setGravity(Gravity.CENTER);
+                            folderList.addView(empty, new LinearLayout.LayoutParams(
+                                    LinearLayout.LayoutParams.MATCH_PARENT, dp(60)));
+                        } else {
+                            for (final File directory : directories) {
+                                folderList.addView(folderRow(directory));
+                            }
+                        }
+                        updateSelectionSummary();
+                    }
+                });
+            }
+        });
     }
 
     private View storageVolumeRow(final StorageVolumeItem volume) {

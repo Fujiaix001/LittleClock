@@ -206,6 +206,8 @@ public class AlarmRingingActivity extends Activity {
 
     private void stopRinging() {
         handler.removeCallbacks(autoSnoozeRunnable);
+        // API 29+ 鬧鐘音效由 AlarmService 播放，需一併停止
+        AlarmService.stopAlarmService(this);
         try {
             android.app.NotificationManager nm = (android.app.NotificationManager)
                     getSystemService(Context.NOTIFICATION_SERVICE);

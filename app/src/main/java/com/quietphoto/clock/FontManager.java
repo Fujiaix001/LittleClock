@@ -8,7 +8,7 @@ import java.io.File;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
-import java.util.HashMap;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
@@ -43,7 +43,7 @@ public final class FontManager {
     };
 
     private static final Set<String> LATIN_DATE_IDS = new HashSet<String>();
-    private static final Map<String, Typeface> CACHE = new HashMap<String, Typeface>();
+    private static final Map<String, Typeface> CACHE = new ConcurrentHashMap<String, Typeface>();
     private static List<FontOption> optionCache;
 
     static {

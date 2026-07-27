@@ -9,6 +9,9 @@ import android.view.View;
 
 public final class WeatherIconView extends View {
     private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Path moonPath = new Path();
+    private final Path cloudPath = new Path();
+    private final Path boltPath = new Path();
     private int weatherCode;
     private boolean daytime = true;
 
@@ -67,25 +70,25 @@ public final class WeatherIconView extends View {
                         18 + (float) Math.sin(angle) * 14, paint);
             }
         } else {
-            Path moon = new Path();
-            moon.moveTo(25, 8);
-            moon.cubicTo(13, 10, 11, 25, 22, 30);
-            moon.cubicTo(11, 30, 6, 17, 13, 10);
-            canvas.drawPath(moon, paint);
+            moonPath.reset();
+            moonPath.moveTo(25, 8);
+            moonPath.cubicTo(13, 10, 11, 25, 22, 30);
+            moonPath.cubicTo(11, 30, 6, 17, 13, 10);
+            canvas.drawPath(moonPath, paint);
         }
     }
 
     private void drawCloud(Canvas canvas) {
         paint.setStyle(Paint.Style.FILL);
         paint.setColor(Color.rgb(235, 241, 245));
-        Path cloud = new Path();
-        cloud.moveTo(12, 34);
-        cloud.cubicTo(5, 34, 5, 24, 13, 23);
-        cloud.cubicTo(16, 14, 29, 14, 33, 23);
-        cloud.cubicTo(43, 22, 45, 34, 36, 36);
-        cloud.lineTo(13, 36);
-        cloud.close();
-        canvas.drawPath(cloud, paint);
+        cloudPath.reset();
+        cloudPath.moveTo(12, 34);
+        cloudPath.cubicTo(5, 34, 5, 24, 13, 23);
+        cloudPath.cubicTo(16, 14, 29, 14, 33, 23);
+        cloudPath.cubicTo(43, 22, 45, 34, 36, 36);
+        cloudPath.lineTo(13, 36);
+        cloudPath.close();
+        canvas.drawPath(cloudPath, paint);
     }
 
     private void drawRain(Canvas canvas) {
@@ -110,15 +113,15 @@ public final class WeatherIconView extends View {
     private void drawThunder(Canvas canvas) {
         paint.setStyle(Paint.Style.FILL);
         paint.setColor(Color.rgb(255, 210, 60));
-        Path bolt = new Path();
-        bolt.moveTo(25, 37);
-        bolt.lineTo(19, 45);
-        bolt.lineTo(25, 44);
-        bolt.lineTo(22, 48);
-        bolt.lineTo(33, 40);
-        bolt.lineTo(27, 41);
-        bolt.close();
-        canvas.drawPath(bolt, paint);
+        boltPath.reset();
+        boltPath.moveTo(25, 37);
+        boltPath.lineTo(19, 45);
+        boltPath.lineTo(25, 44);
+        boltPath.lineTo(22, 48);
+        boltPath.lineTo(33, 40);
+        boltPath.lineTo(27, 41);
+        boltPath.close();
+        canvas.drawPath(boltPath, paint);
     }
 
     private void drawFog(Canvas canvas) {

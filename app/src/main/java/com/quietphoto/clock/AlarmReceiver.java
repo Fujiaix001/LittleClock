@@ -38,6 +38,18 @@ public class AlarmReceiver extends BroadcastReceiver {
             AlarmHelper.scheduleAlarmAt(context, hour, minute, true);
         }
 
+        if (Build.VERSION.SDK_INT >= 29) {
+            // API 29+ 透過 Foreground Service 播放鬧鐘，避免背景啟動 Activity 受限
+            Intent serviceIntent = new Intent(context, AlarmService.class);
+            context.startForegroundService(serviceIntent);
+        } else {
+            // API < 29 維持原本的 startActivity 路徑
+            launchLegacy(context);
+        }
+    }
+
+    /** API < 29 的原始邏輯：直接啟動 Activity 並發出通知。 */
+    private void launchLegacy(Context context) {
         Intent ringIntent = new Intent(context, AlarmRingingActivity.class);
         ringIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK
                 | Intent.FLAG_ACTIVITY_CLEAR_TOP
@@ -56,6 +68,8 @@ public class AlarmReceiver extends BroadcastReceiver {
                 NotificationChannel channel = new NotificationChannel(
                         CHANNEL_ID, "鬧鐘通知", NotificationManager.IMPORTANCE_HIGH);
                 channel.setLockscreenVisibility(Notification.VISIBILITY_PUBLIC);
+                channel.setSound(null, null);
+                channel.enableVibration(false);
                 nm.createNotificationChannel(channel);
             }
 

@@ -332,16 +332,14 @@ public final class PhotoClockActivity extends Activity {
                         for (String asset : assets) {
                             java.io.File outFile = new java.io.File(targetDir, asset);
                             if (!outFile.exists()) {
-                                java.io.InputStream in = getAssets().open("digital_landscapes/" + asset);
-                                java.io.OutputStream out = new java.io.FileOutputStream(outFile);
-                                byte[] buffer = new byte[4096];
-                                int read;
-                                while ((read = in.read(buffer)) != -1) {
-                                    out.write(buffer, 0, read);
+                                try (java.io.InputStream in = getAssets().open("digital_landscapes/" + asset);
+                                     java.io.OutputStream out = new java.io.FileOutputStream(outFile)) {
+                                    byte[] buffer = new byte[4096];
+                                    int read;
+                                    while ((read = in.read(buffer)) != -1) {
+                                        out.write(buffer, 0, read);
+                                    }
                                 }
-                                in.close();
-                                out.flush();
-                                out.close();
                             }
                         }
                     }
