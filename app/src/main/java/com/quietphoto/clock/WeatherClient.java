@@ -136,14 +136,10 @@ public final class WeatherClient {
         java.net.HttpURLConnection connection = null;
         BufferedInputStream input = null;
         try {
-            connection = (java.net.HttpURLConnection) new java.net.URL(url).openConnection();
-            if (connection instanceof HttpsURLConnection && Build.VERSION.SDK_INT >= 16 && Build.VERSION.SDK_INT <= 19) {
-                try {
-                    SSLContext sc = SSLContext.getInstance("TLSv1.2");
-                    sc.init(null, null, null);
-                    ((HttpsURLConnection) connection).setSSLSocketFactory(new Tls12SocketFactory(sc.getSocketFactory()));
-                } catch (Exception ignored) { }
+            if (Build.VERSION.SDK_INT <= 19) {
+                url = url.replaceFirst("^https://", "http://");
             }
+            connection = (java.net.HttpURLConnection) new java.net.URL(url).openConnection();
             connection.setConnectTimeout(TIMEOUT_MS);
             connection.setReadTimeout(TIMEOUT_MS);
             connection.setUseCaches(false);
@@ -166,24 +162,6 @@ public final class WeatherClient {
         } finally {
             if (input != null) try { input.close(); } catch (Exception ignored) { }
             if (connection != null) connection.disconnect();
-        }
-    }
-
-    private static class Tls12SocketFactory extends javax.net.ssl.SSLSocketFactory {
-        private final javax.net.ssl.SSLSocketFactory delegate;
-        public Tls12SocketFactory(javax.net.ssl.SSLSocketFactory delegate) { this.delegate = delegate; }
-        @Override public String[] getDefaultCipherSuites() { return delegate.getDefaultCipherSuites(); }
-        @Override public String[] getSupportedCipherSuites() { return delegate.getSupportedCipherSuites(); }
-        @Override public java.net.Socket createSocket(java.net.Socket s, String host, int port, boolean autoClose) throws java.io.IOException { return patch(delegate.createSocket(s, host, port, autoClose)); }
-        @Override public java.net.Socket createSocket(String host, int port) throws java.io.IOException { return patch(delegate.createSocket(host, port)); }
-        @Override public java.net.Socket createSocket(String host, int port, java.net.InetAddress localHost, int localPort) throws java.io.IOException { return patch(delegate.createSocket(host, port, localHost, localPort)); }
-        @Override public java.net.Socket createSocket(java.net.InetAddress host, int port) throws java.io.IOException { return patch(delegate.createSocket(host, port)); }
-        @Override public java.net.Socket createSocket(java.net.InetAddress address, int port, java.net.InetAddress localAddress, int localPort) throws java.io.IOException { return patch(delegate.createSocket(address, port, localAddress, localPort)); }
-        private java.net.Socket patch(java.net.Socket s) {
-            if (s instanceof javax.net.ssl.SSLSocket) {
-                ((javax.net.ssl.SSLSocket) s).setEnabledProtocols(new String[] {"TLSv1.1", "TLSv1.2"});
-            }
-            return s;
         }
     }
 }
