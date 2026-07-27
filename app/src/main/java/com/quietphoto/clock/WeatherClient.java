@@ -13,6 +13,7 @@ import org.json.JSONObject;
 import java.io.BufferedInputStream;
 import java.io.ByteArrayOutputStream;
 import java.net.URLEncoder;
+import java.text.Normalizer;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -22,6 +23,12 @@ import javax.net.ssl.SSLContext;
 public final class WeatherClient {
     private static final int TIMEOUT_MS = 8000;
     private static final int MAX_RESPONSE_BYTES = 128 * 1024;
+
+    public static String removeAccents(String text) {
+        if (text == null || text.length() == 0) return text;
+        String nfd = Normalizer.normalize(text, Normalizer.Form.NFD);
+        return nfd.replaceAll("\\p{InCombiningDiacriticalMarks}+", "");
+    }
 
     public static final class LocationResult {
         public final String displayName;
@@ -106,7 +113,7 @@ public final class WeatherClient {
                 display.append(", ").append(country);
             }
             locations.add(new LocationResult(
-                    display.toString(),
+                    removeAccents(display.toString()),
                     item.getDouble("latitude"),
                     item.getDouble("longitude"),
                     item.optString("timezone", "auto")));

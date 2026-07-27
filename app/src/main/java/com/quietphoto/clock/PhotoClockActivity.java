@@ -859,7 +859,7 @@ public final class PhotoClockActivity extends Activity {
         if (weatherTemperature != null) weatherTemperature.setTypeface(tf);
         if (compactWeatherTemperature != null) compactWeatherTemperature.setTypeface(tf);
         if (alarmTimeText != null) alarmTimeText.setTypeface(tf);
-        if (weatherLocation != null) weatherLocation.setTypeface(Typeface.SANS_SERIF);
+        if (weatherLocation != null) weatherLocation.setTypeface(tf);
         updatePhotoClock();
 
         if (clockBgEnabled) {
@@ -1643,7 +1643,7 @@ public final class PhotoClockActivity extends Activity {
         boolean isDay = prefs.getBoolean(SettingsActivity.WEATHER_IS_DAY, true);
         weatherTemperature.setText(String.format(Locale.US, "%d°", temperature));
         compactWeatherTemperature.setText(String.format(Locale.US, "%d°", temperature));
-        weatherLocation.setText(weatherLocationName);
+        weatherLocation.setText(WeatherClient.removeAccents(weatherLocationName));
         weatherLocation.setVisibility(
                 weatherShowLocation && weatherLocationName.length() > 0 ? View.VISIBLE : View.GONE);
         weatherIcon.setWeather(code, isDay);
