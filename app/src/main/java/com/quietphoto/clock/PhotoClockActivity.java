@@ -141,6 +141,16 @@ public final class PhotoClockActivity extends Activity {
     private int nightEndHour = 7;
     private int transitionType;
     private boolean isNightSleepActive;
+    private boolean isNightSleepWoken;
+    private final Runnable nightSleepReDimRunnable = new Runnable() {
+        @Override
+        public void run() {
+            if (isNightSleepActive && isNightSleepWoken) {
+                isNightSleepWoken = false;
+                enterNightSleepMode();
+            }
+        }
+    };
 
     // 3 大視覺特效標誌
     private boolean adaptiveColorEnabled = true;
@@ -509,6 +519,9 @@ public final class PhotoClockActivity extends Activity {
 
     @Override
     public boolean dispatchTouchEvent(MotionEvent event) {
+        if (event != null && event.getAction() == MotionEvent.ACTION_DOWN && isNightSleepActive) {
+            triggerNightSleepWakeup();
+        }
         if (scaleGestureDetector != null) {
             scaleGestureDetector.onTouchEvent(event);
         }
@@ -517,6 +530,15 @@ public final class PhotoClockActivity extends Activity {
             photoGestureDetector.onTouchEvent(event);
         }
         return super.dispatchTouchEvent(event);
+    }
+
+    private void triggerNightSleepWakeup() {
+        photoHandler.removeCallbacks(nightSleepReDimRunnable);
+        if (!isNightSleepWoken) {
+            isNightSleepWoken = true;
+            restoreNormalMode();
+        }
+        photoHandler.postDelayed(nightSleepReDimRunnable, 30000L);
     }
 
     private boolean isTouchOnClock(MotionEvent event) {
@@ -767,6 +789,8 @@ public final class PhotoClockActivity extends Activity {
         if (!nightModeEnabled) {
             if (isNightSleepActive) {
                 isNightSleepActive = false;
+                isNightSleepWoken = false;
+                photoHandler.removeCallbacks(nightSleepReDimRunnable);
                 restoreNormalMode();
             }
             return;
@@ -783,9 +807,12 @@ public final class PhotoClockActivity extends Activity {
 
         if (shouldSleep && !isNightSleepActive) {
             isNightSleepActive = true;
+            isNightSleepWoken = false;
             enterNightSleepMode();
         } else if (!shouldSleep && isNightSleepActive) {
             isNightSleepActive = false;
+            isNightSleepWoken = false;
+            photoHandler.removeCallbacks(nightSleepReDimRunnable);
             restoreNormalMode();
         }
     }
