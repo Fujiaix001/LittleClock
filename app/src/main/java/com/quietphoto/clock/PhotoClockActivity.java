@@ -109,8 +109,10 @@ public final class PhotoClockActivity extends Activity {
     private LinearLayout pomodoroRow;
     private TextView pomodoroLabel;
     private TextView pomodoroText;
+    private FrameLayout pomodoroFocusPanel;
     private Button settingsButton;
     private Button pomodoroButton;
+    private StateListDrawable quickActionBackground;
     private FrameLayout focusReminderOverlay;
     private ToneGenerator focusReminderTone;
     private AlertDialog pomodoroDialog;
@@ -132,6 +134,7 @@ public final class PhotoClockActivity extends Activity {
     private boolean clockTimeEnabled = true;
     private boolean clockDateEnabled = true;
     private boolean pomodoroModeLayoutActive;
+    private boolean pomodoroSettingsLocked;
     private long lastAlarmFiredMinute = -1;
     private PhotoSource currentPhotoSource;
 
@@ -284,7 +287,7 @@ public final class PhotoClockActivity extends Activity {
         @Override
         public void run() {
             if (focusReminderTone != null) {
-                focusReminderTone.startTone(ToneGenerator.TONE_PROP_BEEP2, 100);
+                focusReminderTone.startTone(ToneGenerator.TONE_PROP_BEEP2, 130);
             }
         }
     };
@@ -633,10 +636,10 @@ public final class PhotoClockActivity extends Activity {
             Vibrator vibrator = (Vibrator) getSystemService(Context.VIBRATOR_SERVICE);
             if (vibrator == null || !vibrator.hasVibrator()) return;
             if (Build.VERSION.SDK_INT >= 26) {
-                vibrator.vibrate(VibrationEffect.createOneShot(70L,
-                        VibrationEffect.DEFAULT_AMPLITUDE));
+                vibrator.vibrate(VibrationEffect.createWaveform(
+                        new long[] { 0L, 90L, 80L, 110L }, -1));
             } else {
-                vibrator.vibrate(70L);
+                vibrator.vibrate(new long[] { 0L, 90L, 80L, 110L }, -1);
             }
         } catch (RuntimeException ignored) {
             // Some tablets do not expose a usable vibrator; the visual and sound remain available.
@@ -646,12 +649,12 @@ public final class PhotoClockActivity extends Activity {
     private void playFocusReminderTone() {
         releaseFocusReminderTone();
         try {
-            focusReminderTone = new ToneGenerator(AudioManager.STREAM_NOTIFICATION, 24);
-            focusReminderTone.startTone(ToneGenerator.TONE_PROP_BEEP2, 100);
+            focusReminderTone = new ToneGenerator(AudioManager.STREAM_ALARM, 45);
+            focusReminderTone.startTone(ToneGenerator.TONE_PROP_BEEP2, 130);
             photoHandler.removeCallbacks(focusReminderSecondBeepRunnable);
             photoHandler.removeCallbacks(releaseFocusReminderToneRunnable);
-            photoHandler.postDelayed(focusReminderSecondBeepRunnable, 220L);
-            photoHandler.postDelayed(releaseFocusReminderToneRunnable, 520L);
+            photoHandler.postDelayed(focusReminderSecondBeepRunnable, 260L);
+            photoHandler.postDelayed(releaseFocusReminderToneRunnable, 620L);
         } catch (RuntimeException ignored) {
             releaseFocusReminderTone();
         }
@@ -1182,7 +1185,7 @@ public final class PhotoClockActivity extends Activity {
                 LinearLayout.LayoutParams.WRAP_CONTENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT));
         pomodoroText = new TextView(this);
-        pomodoroText.setTextSize(64);
+        pomodoroText.setTextSize(88);
         pomodoroText.setTextColor(Color.WHITE);
         pomodoroText.setGravity(Gravity.CENTER_HORIZONTAL);
         pomodoroText.setIncludeFontPadding(false);
@@ -1243,6 +1246,12 @@ public final class PhotoClockActivity extends Activity {
         clockParams.setMargins(dp(28), dp(28), dp(16), dp(16));
         rootContainer.addView(clockPanel, clockParams);
 
+        pomodoroFocusPanel = new FrameLayout(this);
+        pomodoroFocusPanel.setVisibility(View.GONE);
+        rootContainer.addView(pomodoroFocusPanel, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT));
+
         setupClockDragAndDrop();
 
         settingsButton = new Button(this);
@@ -1260,6 +1269,7 @@ public final class PhotoClockActivity extends Activity {
         folderBg.addState(
                 new int[] {},
                 rounded(Color.argb(68, 35, 52, 62)));
+        quickActionBackground = folderBg;
         settingsButton.setBackground(folderBg);
         settingsButton.setOnClickListener(new View.OnClickListener() {
             @Override
@@ -1710,11 +1720,36 @@ public final class PhotoClockActivity extends Activity {
         }
         settingsButton.animate().cancel();
         settingsButton.setVisibility(View.VISIBLE);
-        settingsButton.animate().alpha(0.88f).setDuration(180).start();
+        settingsButton.animate().alpha(pomodoroSettingsLocked ? 0.42f : 0.88f)
+                .setDuration(180).start();
         if (pomodoroButton != null) {
             pomodoroButton.animate().cancel();
             pomodoroButton.setVisibility(View.VISIBLE);
-            pomodoroButton.animate().alpha(0.88f).setDuration(180).start();
+            pomodoroButton.animate().alpha(pomodoroSettingsLocked ? 1.0f : 0.88f)
+                    .setDuration(180).start();
+        }
+        updatePomodoroQuickActions(pomodoroSettingsLocked);
+    }
+
+    private void updatePomodoroQuickActions(boolean settingsLocked) {
+        pomodoroSettingsLocked = settingsLocked;
+        if (settingsButton != null) {
+            settingsButton.setEnabled(!settingsLocked);
+            settingsButton.setTextColor(settingsLocked ? SECONDARY : Color.WHITE);
+            settingsButton.setBackground(settingsLocked
+                    ? rounded(Color.rgb(58, 61, 66)) : quickActionBackground);
+            if (settingsButton.getVisibility() == View.VISIBLE) {
+                settingsButton.setAlpha(settingsLocked ? 0.42f : 0.88f);
+            }
+        }
+        if (pomodoroButton != null) {
+            pomodoroButton.setEnabled(true);
+            pomodoroButton.setTextColor(Color.WHITE);
+            pomodoroButton.setBackground(settingsLocked
+                    ? rounded(Color.rgb(37, 124, 137)) : quickActionBackground);
+            if (pomodoroButton.getVisibility() == View.VISIBLE) {
+                pomodoroButton.setAlpha(settingsLocked ? 1.0f : 0.88f);
+            }
         }
     }
 
@@ -1992,12 +2027,14 @@ public final class PhotoClockActivity extends Activity {
         PomodoroHelper.Snapshot snapshot = PomodoroHelper.getSnapshot(this);
         if (!snapshot.hasSession) {
             applyPomodoroModeLayout(false);
+            updatePomodoroQuickActions(false);
             pomodoroRow.setVisibility(View.GONE);
             return;
         }
         pomodoroLabel.setText(pomodoroEnglishLabel(snapshot));
         pomodoroText.setText(PomodoroHelper.formatRemaining(snapshot.remainingMs));
         applyPomodoroModeLayout(true);
+        updatePomodoroQuickActions(snapshot.running);
         pomodoroRow.setVisibility(View.VISIBLE);
     }
 
@@ -2008,37 +2045,40 @@ public final class PhotoClockActivity extends Activity {
     }
 
     private void applyPomodoroModeLayout(boolean active) {
-        if (clockPanel == null) return;
+        if (clockPanel == null || pomodoroFocusPanel == null) return;
         if (pomodoroModeLayoutActive != active) {
             pomodoroModeLayoutActive = active;
-            FrameLayout.LayoutParams params = (FrameLayout.LayoutParams) clockPanel.getLayoutParams();
             if (active) {
-                params.gravity = Gravity.CENTER;
-                params.setMargins(0, 0, 0, 0);
+                movePomodoroRowToFocusPanel();
+                pomodoroFocusPanel.setVisibility(View.VISIBLE);
             } else {
-                params.gravity = Gravity.BOTTOM | Gravity.END;
-                params.setMargins(dp(28), dp(28), dp(16), dp(16));
+                movePomodoroRowToClockPanel();
+                pomodoroFocusPanel.setVisibility(View.GONE);
             }
-            clockPanel.setLayoutParams(params);
             applyClockTranslation();
-            if (!active && rootContainer != null) {
+            if (rootContainer != null) {
                 rootContainer.post(new Runnable() {
                     @Override
                     public void run() {
-                        restoreClockPosition();
                         updateWeatherFromCache();
+                        if (!pomodoroModeLayoutActive) restoreClockPosition();
                     }
                 });
             }
         }
         if (photoTime != null) {
-            photoTime.setVisibility(active ? View.GONE
-                    : (clockTimeEnabled ? View.VISIBLE : View.GONE));
-            photoTime.setTextSize(64);
+            photoTime.setVisibility(clockTimeEnabled ? View.VISIBLE : View.GONE);
+            photoTime.setTextSize(active ? 32 : 64);
             photoTime.setAlpha(1.0f);
         }
-        if (dateRow != null) dateRow.setVisibility(active ? View.GONE : View.VISIBLE);
-        if (weatherRow != null && active) weatherRow.setVisibility(View.GONE);
+        if (photoDate != null) photoDate.setTextSize(active ? 14 : 24);
+        if (dateRow != null) dateRow.setVisibility(View.VISIBLE);
+        if (compactWeatherTemperature != null) compactWeatherTemperature.setTextSize(active ? 14 : 18);
+        if (weatherTemperature != null) weatherTemperature.setTextSize(active ? 14 : 20);
+        if (weatherLocation != null) weatherLocation.setTextSize(active ? 11 : 14);
+        if (compactWeatherIcon != null) resizeView(compactWeatherIcon, active ? 16 : 22, active ? 16 : 22);
+        if (weatherIcon != null) resizeView(weatherIcon, active ? 18 : 30, active ? 18 : 30);
+        if (alarmRow != null) alarmRow.setVisibility(active ? View.GONE : alarmRow.getVisibility());
         int dimColor = Color.argb(120, 100, 100, 100);
         if (photoTime != null) {
             photoTime.setTextColor(isNightSleepActive ? dimColor : Color.WHITE);
@@ -2048,8 +2088,39 @@ public final class PhotoClockActivity extends Activity {
             pomodoroLabel.setTextColor(isNightSleepActive ? dimColor : Color.WHITE);
         }
         if (pomodoroText != null) {
-            pomodoroText.setTextSize(64);
+            pomodoroText.setTextSize(88);
             pomodoroText.setTextColor(isNightSleepActive ? dimColor : Color.WHITE);
+        }
+    }
+
+    private void movePomodoroRowToFocusPanel() {
+        if (pomodoroRow.getParent() == pomodoroFocusPanel) return;
+        if (pomodoroRow.getParent() instanceof android.view.ViewGroup) {
+            ((android.view.ViewGroup) pomodoroRow.getParent()).removeView(pomodoroRow);
+        }
+        pomodoroFocusPanel.addView(pomodoroRow, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.CENTER));
+    }
+
+    private void movePomodoroRowToClockPanel() {
+        if (pomodoroRow.getParent() == clockPanel) return;
+        if (pomodoroRow.getParent() instanceof android.view.ViewGroup) {
+            ((android.view.ViewGroup) pomodoroRow.getParent()).removeView(pomodoroRow);
+        }
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+        params.setMargins(0, dp(3), 0, 0);
+        clockPanel.addView(pomodoroRow, 1, params);
+    }
+
+    private void resizeView(View view, int widthDp, int heightDp) {
+        android.view.ViewGroup.LayoutParams params = view.getLayoutParams();
+        if (params != null) {
+            params.width = dp(widthDp);
+            params.height = dp(heightDp);
+            view.setLayoutParams(params);
         }
     }
 
