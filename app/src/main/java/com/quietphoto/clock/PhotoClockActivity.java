@@ -351,6 +351,7 @@ public final class PhotoClockActivity extends Activity {
         super.onCreate(savedInstanceState);
         FontManager.prefetch(this.getApplicationContext());
         prefs = getSharedPreferences(SettingsActivity.PREFERENCES, MODE_PRIVATE);
+        migrateOrientationClockLayouts();
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
 
         setContentView(buildInterface());
@@ -410,6 +411,34 @@ public final class PhotoClockActivity extends Activity {
                 }
             }
         }).start();
+    }
+
+    /** Makes portrait and landscape clock layouts independent while preserving old settings. */
+    private void migrateOrientationClockLayouts() {
+        String[] orientations = { "_portrait", "_landscape" };
+        float legacyX = prefs.getFloat(SettingsActivity.CLOCK_X_RATIO, 0.95f);
+        float legacyY = prefs.getFloat(SettingsActivity.CLOCK_Y_RATIO, 0.90f);
+        float legacyScale = prefs.getFloat(CLOCK_SCALE_FACTOR, 0.75f);
+        SharedPreferences.Editor editor = prefs.edit();
+        boolean changed = false;
+        for (String orientation : orientations) {
+            String xKey = CLOCK_POS_X_RATIO + orientation;
+            String yKey = CLOCK_POS_Y_RATIO + orientation;
+            String scaleKey = CLOCK_SCALE_FACTOR + orientation;
+            if (!prefs.contains(xKey)) {
+                editor.putFloat(xKey, legacyX);
+                changed = true;
+            }
+            if (!prefs.contains(yKey)) {
+                editor.putFloat(yKey, legacyY);
+                changed = true;
+            }
+            if (!prefs.contains(scaleKey)) {
+                editor.putFloat(scaleKey, legacyScale);
+                changed = true;
+            }
+        }
+        if (changed) editor.apply();
     }
 
     @Override
@@ -485,7 +514,7 @@ public final class PhotoClockActivity extends Activity {
         super.onConfigurationChanged(newConfig);
         clockScaleFactor = prefs.getFloat(
                 orientationKey(CLOCK_SCALE_FACTOR),
-                prefs.getFloat(CLOCK_SCALE_FACTOR, 1.0f));
+                1.0f);
         applyClockScale();
         if (photoImage != null && photoBitmap != null) {
             applyPhotoPresentation(photoBitmap);
@@ -882,7 +911,7 @@ public final class PhotoClockActivity extends Activity {
         weatherLongitude = parseDouble(prefs.getString(SettingsActivity.WEATHER_LONGITUDE, null));
         clockScaleFactor = prefs.getFloat(
                 orientationKey(CLOCK_SCALE_FACTOR),
-                prefs.getFloat(CLOCK_SCALE_FACTOR, 0.75f));
+                0.75f);
 
         favoritePhotos.clear();
         hiddenPhotos.clear();
@@ -1712,10 +1741,10 @@ public final class PhotoClockActivity extends Activity {
     private void restoreClockPosition() {
         float ratioX = prefs.getFloat(
                 orientationKey(CLOCK_POS_X_RATIO),
-                prefs.getFloat(SettingsActivity.CLOCK_X_RATIO, 0.95f));
+                0.95f);
         float ratioY = prefs.getFloat(
                 orientationKey(CLOCK_POS_Y_RATIO),
-                prefs.getFloat(SettingsActivity.CLOCK_Y_RATIO, 0.90f));
+                0.90f);
         if (ratioX < 0.0f || ratioY < 0.0f || rootContainer == null || clockPanel == null) {
             return;
         }
