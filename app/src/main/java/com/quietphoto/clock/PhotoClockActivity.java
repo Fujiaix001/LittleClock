@@ -23,6 +23,8 @@ import android.hardware.Sensor;
 import android.hardware.SensorEvent;
 import android.hardware.SensorEventListener;
 import android.hardware.SensorManager;
+import android.media.AudioManager;
+import android.media.ToneGenerator;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -80,6 +82,7 @@ public final class PhotoClockActivity extends Activity {
     private static final long WEATHER_FRESH_NORMAL_MS = 60L * 60L * 1000L;
     private static final long WEATHER_FRESH_LOW_POWER_MS = 120L * 60L * 1000L;
     private static final long WEATHER_MAX_AGE_MS = 6L * 60L * 60L * 1000L;
+    private static final long FOCUS_REMINDER_DURATION_MS = 5000L;
 
     private FrameLayout rootContainer;
     private FrameLayout polaroidContainer;
@@ -104,6 +107,8 @@ public final class PhotoClockActivity extends Activity {
     private TextView pomodoroText;
     private Button settingsButton;
     private Button pomodoroButton;
+    private FrameLayout focusReminderOverlay;
+    private ToneGenerator focusReminderTone;
     private AlertDialog pomodoroDialog;
     private TextView pomodoroDialogStatus;
     private Button pomodoroStartPauseButton;
@@ -270,6 +275,33 @@ public final class PhotoClockActivity extends Activity {
         }
     };
 
+    private final Runnable focusReminderSecondBeepRunnable = new Runnable() {
+        @Override
+        public void run() {
+            if (focusReminderTone != null) {
+                focusReminderTone.startTone(ToneGenerator.TONE_PROP_BEEP2, 100);
+            }
+        }
+    };
+
+    private final Runnable releaseFocusReminderToneRunnable = new Runnable() {
+        @Override
+        public void run() {
+            releaseFocusReminderTone();
+        }
+    };
+
+    private final Runnable hideFocusReminderRunnable = new Runnable() {
+        @Override
+        public void run() {
+            if (focusReminderOverlay != null) {
+                focusReminderOverlay.setVisibility(View.GONE);
+            }
+            showSettingsButton();
+            resetImmersiveTimeout();
+        }
+    };
+
     private android.animation.ValueAnimator photoPanAnimator;
 
     private final Runnable burnInRunnable = new Runnable() {
@@ -417,6 +449,13 @@ public final class PhotoClockActivity extends Activity {
         photoHandler.removeCallbacks(mediaRefreshRunnable);
         photoHandler.removeCallbacks(weatherRefreshRunnable);
         photoHandler.removeCallbacks(pomodoroDialogTicker);
+        photoHandler.removeCallbacks(focusReminderSecondBeepRunnable);
+        photoHandler.removeCallbacks(releaseFocusReminderToneRunnable);
+        photoHandler.removeCallbacks(hideFocusReminderRunnable);
+        releaseFocusReminderTone();
+        if (focusReminderOverlay != null) {
+            focusReminderOverlay.setVisibility(View.GONE);
+        }
         unregisterMediaObserver();
         unregisterLightSensor();
         stopPhotoSlideshow();
@@ -430,6 +469,10 @@ public final class PhotoClockActivity extends Activity {
         photoHandler.removeCallbacks(mediaRefreshRunnable);
         photoHandler.removeCallbacks(weatherRefreshRunnable);
         photoHandler.removeCallbacks(pomodoroDialogTicker);
+        photoHandler.removeCallbacks(focusReminderSecondBeepRunnable);
+        photoHandler.removeCallbacks(releaseFocusReminderToneRunnable);
+        photoHandler.removeCallbacks(hideFocusReminderRunnable);
+        releaseFocusReminderTone();
         unregisterMediaObserver();
         unregisterLightSensor();
         stopPhotoSlideshow();
@@ -532,6 +575,11 @@ public final class PhotoClockActivity extends Activity {
         if (event != null && event.getAction() == MotionEvent.ACTION_DOWN && isNightSleepActive) {
             triggerNightSleepWakeup();
         }
+        if (event != null && event.getAction() == MotionEvent.ACTION_DOWN
+                && shouldShowFocusReminder(event)) {
+            showFocusReminder();
+            return true;
+        }
         if (scaleGestureDetector != null) {
             scaleGestureDetector.onTouchEvent(event);
         }
@@ -540,6 +588,61 @@ public final class PhotoClockActivity extends Activity {
             photoGestureDetector.onTouchEvent(event);
         }
         return super.dispatchTouchEvent(event);
+    }
+
+    private boolean shouldShowFocusReminder(MotionEvent event) {
+        if (!activityResumed || isNightSleepActive || pomodoroDialog != null
+                || focusReminderOverlay == null
+                || focusReminderOverlay.getVisibility() == View.VISIBLE) {
+            return false;
+        }
+        if (isTouchOnView(pomodoroButton, event)) {
+            return false;
+        }
+        PomodoroHelper.Snapshot snapshot = PomodoroHelper.getSnapshot(this);
+        return snapshot.running && PomodoroHelper.PHASE_FOCUS.equals(snapshot.phase);
+    }
+
+    private boolean isTouchOnView(View view, MotionEvent event) {
+        if (view == null || view.getVisibility() != View.VISIBLE || event == null) return false;
+        int[] location = new int[2];
+        view.getLocationOnScreen(location);
+        float x = event.getRawX();
+        float y = event.getRawY();
+        return x >= location[0] && x <= location[0] + view.getWidth()
+                && y >= location[1] && y <= location[1] + view.getHeight();
+    }
+
+    private void showFocusReminder() {
+        if (focusReminderOverlay == null) return;
+        photoHandler.removeCallbacks(hideFocusReminderRunnable);
+        focusReminderOverlay.setVisibility(View.VISIBLE);
+        playFocusReminderTone();
+        photoHandler.postDelayed(hideFocusReminderRunnable, FOCUS_REMINDER_DURATION_MS);
+    }
+
+    private void playFocusReminderTone() {
+        releaseFocusReminderTone();
+        try {
+            focusReminderTone = new ToneGenerator(AudioManager.STREAM_NOTIFICATION, 24);
+            focusReminderTone.startTone(ToneGenerator.TONE_PROP_BEEP2, 100);
+            photoHandler.removeCallbacks(focusReminderSecondBeepRunnable);
+            photoHandler.removeCallbacks(releaseFocusReminderToneRunnable);
+            photoHandler.postDelayed(focusReminderSecondBeepRunnable, 220L);
+            photoHandler.postDelayed(releaseFocusReminderToneRunnable, 520L);
+        } catch (RuntimeException ignored) {
+            releaseFocusReminderTone();
+        }
+    }
+
+    private void releaseFocusReminderTone() {
+        if (focusReminderTone != null) {
+            try {
+                focusReminderTone.release();
+            } catch (RuntimeException ignored) {
+            }
+            focusReminderTone = null;
+        }
     }
 
     private void triggerNightSleepWakeup() {
@@ -1155,6 +1258,35 @@ public final class PhotoClockActivity extends Activity {
                 dp(130), dp(48), Gravity.TOP | Gravity.START);
         pomodoroButtonParams.setMargins(dp(154), dp(16), 0, 0);
         rootContainer.addView(pomodoroButton, pomodoroButtonParams);
+
+        focusReminderOverlay = new FrameLayout(this);
+        focusReminderOverlay.setBackgroundColor(Color.BLACK);
+        focusReminderOverlay.setClickable(true);
+        focusReminderOverlay.setVisibility(View.GONE);
+        ImageView reminderImage = new ImageView(this);
+        reminderImage.setImageResource(R.drawable.focus_reminder);
+        reminderImage.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        reminderImage.setContentDescription("專注提醒圖片");
+        focusReminderOverlay.addView(reminderImage, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT));
+        TextView reminderMessage = new TextView(this);
+        reminderMessage.setText("專注一下，倒數仍在進行");
+        reminderMessage.setTextSize(20);
+        reminderMessage.setTextColor(Color.WHITE);
+        reminderMessage.setTypeface(Typeface.DEFAULT_BOLD);
+        reminderMessage.setGravity(Gravity.CENTER);
+        reminderMessage.setPadding(dp(16), dp(10), dp(16), dp(10));
+        reminderMessage.setBackground(rounded(Color.argb(180, 0, 0, 0)));
+        FrameLayout.LayoutParams reminderMessageParams = new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                Gravity.BOTTOM);
+        reminderMessageParams.setMargins(dp(20), 0, dp(20), dp(28));
+        focusReminderOverlay.addView(reminderMessage, reminderMessageParams);
+        rootContainer.addView(focusReminderOverlay, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT));
 
         updatePhotoClock();
         return rootContainer;
