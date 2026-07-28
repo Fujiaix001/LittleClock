@@ -17,6 +17,12 @@ Designer: Fontworks Inc.
 Source: https://fonts.google.com/specimen/DotGothic16
 License: SIL Open Font License 1.1
 
+Font: Iansui (芫荽), subset for LittleClock
+File: font_iansui.ttf
+Designer: ButTaiwan
+Source: https://github.com/ButTaiwan/iansui
+License: SIL Open Font License 1.1
+
 Font: Noto Sans JP
 File: font_sans.ttf
 Designer: Google

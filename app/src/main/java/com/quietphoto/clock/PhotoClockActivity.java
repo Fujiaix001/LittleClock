@@ -1136,7 +1136,7 @@ public final class PhotoClockActivity extends Activity {
                 LinearLayout.LayoutParams.WRAP_CONTENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT));
         pomodoroText = new TextView(this);
-        pomodoroText.setTextSize(88);
+        pomodoroText.setTextSize(100);
         pomodoroText.setTextColor(Color.WHITE);
         pomodoroText.setGravity(Gravity.CENTER_HORIZONTAL);
         pomodoroText.setIncludeFontPadding(false);
@@ -1270,7 +1270,7 @@ public final class PhotoClockActivity extends Activity {
         reminderMessage.setText("專心一點！");
         reminderMessage.setTextSize(20);
         reminderMessage.setTextColor(Color.WHITE);
-        reminderMessage.setTypeface(Typeface.DEFAULT_BOLD);
+        reminderMessage.setTypeface(FontManager.getPomodoroChineseFont(this));
         reminderMessage.setGravity(Gravity.CENTER);
         reminderMessage.setPadding(dp(16), dp(10), dp(16), dp(10));
         reminderMessage.setBackground(rounded(Color.argb(180, 0, 0, 0)));
@@ -1339,6 +1339,7 @@ public final class PhotoClockActivity extends Activity {
                         Toast.makeText(PhotoClockActivity.this,
                                 "未允許精準鬧鐘時，背景提醒可能延遲", Toast.LENGTH_LONG).show();
                     }
+                    if (pomodoroDialog != null) pomodoroDialog.dismiss();
                 }
                 updatePomodoroDisplay();
                 refreshPomodoroDialog();
@@ -1442,6 +1443,7 @@ public final class PhotoClockActivity extends Activity {
                         }
                         updatePomodoroDisplay();
                         refreshPomodoroDialog();
+                        if (pomodoroDialog != null) pomodoroDialog.dismiss();
                     }
                 })
                 .show();
@@ -2077,16 +2079,16 @@ public final class PhotoClockActivity extends Activity {
         }
         if (photoTime != null) {
             photoTime.setVisibility(clockTimeEnabled ? View.VISIBLE : View.GONE);
-            photoTime.setTextSize(active ? 32 : 64);
+            photoTime.setTextSize(active ? 38 : 64);
             photoTime.setAlpha(1.0f);
         }
-        if (photoDate != null) photoDate.setTextSize(active ? 14 : 24);
+        if (photoDate != null) photoDate.setTextSize(active ? 17 : 24);
         if (dateRow != null) dateRow.setVisibility(View.VISIBLE);
-        if (compactWeatherTemperature != null) compactWeatherTemperature.setTextSize(active ? 14 : 18);
-        if (weatherTemperature != null) weatherTemperature.setTextSize(active ? 14 : 20);
-        if (weatherLocation != null) weatherLocation.setTextSize(active ? 11 : 14);
-        if (compactWeatherIcon != null) resizeView(compactWeatherIcon, active ? 16 : 22, active ? 16 : 22);
-        if (weatherIcon != null) resizeView(weatherIcon, active ? 18 : 30, active ? 18 : 30);
+        if (compactWeatherTemperature != null) compactWeatherTemperature.setTextSize(active ? 17 : 18);
+        if (weatherTemperature != null) weatherTemperature.setTextSize(active ? 17 : 20);
+        if (weatherLocation != null) weatherLocation.setTextSize(active ? 13 : 14);
+        if (compactWeatherIcon != null) resizeView(compactWeatherIcon, active ? 19 : 22, active ? 19 : 22);
+        if (weatherIcon != null) resizeView(weatherIcon, active ? 22 : 30, active ? 22 : 30);
         if (alarmRow != null) alarmRow.setVisibility(active ? View.GONE : alarmRow.getVisibility());
         int dimColor = Color.argb(120, 100, 100, 100);
         if (photoTime != null) {
@@ -2097,7 +2099,7 @@ public final class PhotoClockActivity extends Activity {
             pomodoroLabel.setTextColor(isNightSleepActive ? dimColor : Color.WHITE);
         }
         if (pomodoroText != null) {
-            pomodoroText.setTextSize(88);
+            pomodoroText.setTextSize(100);
             pomodoroText.setTextColor(isNightSleepActive ? dimColor : Color.WHITE);
         }
     }
@@ -2107,9 +2109,12 @@ public final class PhotoClockActivity extends Activity {
         if (pomodoroRow.getParent() instanceof android.view.ViewGroup) {
             ((android.view.ViewGroup) pomodoroRow.getParent()).removeView(pomodoroRow);
         }
-        pomodoroFocusPanel.addView(pomodoroRow, new FrameLayout.LayoutParams(
+        FrameLayout.LayoutParams focusParams = new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.WRAP_CONTENT,
-                FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.CENTER));
+                FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.CENTER);
+        focusParams.leftMargin = -dp(28);
+        focusParams.topMargin = -dp(38);
+        pomodoroFocusPanel.addView(pomodoroRow, focusParams);
     }
 
     private void movePomodoroRowToClockPanel() {

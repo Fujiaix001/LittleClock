@@ -4,7 +4,7 @@ plugins {
 
 val versionMajor = 3
 val versionMinor = 0
-val basePatch = 7
+val basePatch = 8
 
 android {
     namespace = "com.quietphoto.clock"
@@ -75,6 +75,7 @@ val bundledFontNames = setOf(
     "font_audiowide.ttf",
     "font_digital.ttf",
     "font_heavy.ttf",
+    "font_iansui.ttf",
     "font_kai.ttf",
     "font_orbitron.ttf",
     "font_oxanium.ttf",

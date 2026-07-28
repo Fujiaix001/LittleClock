@@ -35,6 +35,7 @@ public final class FontManager {
             { "asset:font_rounded.ttf", "Zen Maru Gothic" },
             { "asset:font_kai.ttf", "Klee One" },
             { "asset:font_heavy.ttf", "Dela Gothic One" },
+            { "asset:font_iansui.ttf", "芫荽 Iansui" },
             { "asset:font_orbitron.ttf", "Orbitron" },
             { "asset:font_audiowide.ttf", "Audiowide" },
             { "asset:font_oxanium.ttf", "Oxanium" },
@@ -139,6 +140,11 @@ public final class FontManager {
 
     public static boolean usesLatinDate(String id) {
         return id != null && (LATIN_DATE_IDS.contains(id) || id.startsWith("system-file:"));
+    }
+
+    /** Dedicated Traditional-Chinese face for pomodoro reminders. */
+    public static Typeface getPomodoroChineseFont(Context context) {
+        return getFont(context, "asset:font_iansui.ttf");
     }
 
     public static Typeface getFont(Context context, String id) {
