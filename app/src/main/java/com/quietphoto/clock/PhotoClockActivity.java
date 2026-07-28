@@ -632,9 +632,10 @@ public final class PhotoClockActivity extends Activity {
             if (vibrator == null || !vibrator.hasVibrator()) return;
             if (Build.VERSION.SDK_INT >= 26) {
                 vibrator.vibrate(VibrationEffect.createWaveform(
-                        new long[] { 0L, 90L, 80L, 110L }, -1));
+                        new long[] { 0L, 180L, 90L, 220L },
+                        new int[] { 0, 255, 0, 255 }, -1));
             } else {
-                vibrator.vibrate(new long[] { 0L, 90L, 80L, 110L }, -1);
+                vibrator.vibrate(new long[] { 0L, 180L, 90L, 220L }, -1);
             }
         } catch (RuntimeException ignored) {
             // Some tablets do not expose a usable vibrator; the visual reminder remains available.
@@ -648,7 +649,8 @@ public final class PhotoClockActivity extends Activity {
             if (vibrator == null || !vibrator.hasVibrator()) return;
             long[] pattern = new long[] { 0L, 180L, 130L, 180L, 130L, 250L };
             if (Build.VERSION.SDK_INT >= 26) {
-                vibrator.vibrate(VibrationEffect.createWaveform(pattern, -1));
+                vibrator.vibrate(VibrationEffect.createWaveform(pattern,
+                        new int[] { 0, 255, 0, 255, 0, 255 }, -1));
             } else {
                 vibrator.vibrate(pattern, -1);
             }
@@ -1434,6 +1436,8 @@ public final class PhotoClockActivity extends Activity {
         });
         pomodoroDialog.show();
         styleModernDialog(pomodoroDialog);
+        Button returnToPomodoro = pomodoroDialog.getButton(AlertDialog.BUTTON_NEGATIVE);
+        if (returnToPomodoro != null) returnToPomodoro.setTextColor(Color.rgb(104, 213, 216));
         refreshPomodoroDialog();
         photoHandler.removeCallbacks(pomodoroDialogTicker);
         photoHandler.postDelayed(pomodoroDialogTicker, 1000L);
@@ -2220,8 +2224,10 @@ public final class PhotoClockActivity extends Activity {
 
         FrameLayout.LayoutParams params = (FrameLayout.LayoutParams) pomodoroRow.getLayoutParams();
         params.gravity = Gravity.CENTER;
-        params.leftMargin = -dp(portrait ? 16 : 46);
-        params.topMargin = -dp(portrait ? 34 : 58);
+        params.leftMargin = portrait ? 0 : -dp(46);
+        // The row includes the small phase label. Shift by half its height so the
+        // countdown itself, rather than the combined row, is exactly centered.
+        params.topMargin = portrait ? -Math.max(dp(10), pomodoroLabel.getHeight() / 2) : -dp(58);
         pomodoroRow.setLayoutParams(params);
     }
 

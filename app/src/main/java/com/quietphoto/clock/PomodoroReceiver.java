@@ -58,7 +58,8 @@ public final class PomodoroReceiver extends BroadcastReceiver {
             if (vibrator == null || !vibrator.hasVibrator()) return;
             long[] pattern = new long[] { 0L, 180L, 130L, 180L, 130L, 250L };
             if (Build.VERSION.SDK_INT >= 26) {
-                vibrator.vibrate(VibrationEffect.createWaveform(pattern, -1));
+                vibrator.vibrate(VibrationEffect.createWaveform(pattern,
+                        new int[] { 0, 255, 0, 255, 0, 255 }, -1));
             } else {
                 vibrator.vibrate(pattern, -1);
             }
