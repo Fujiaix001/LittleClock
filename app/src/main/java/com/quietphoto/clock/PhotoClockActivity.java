@@ -45,6 +45,7 @@ import android.widget.Button;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
+import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -129,6 +130,7 @@ public final class PhotoClockActivity extends Activity {
     private SharedPreferences prefs;
     private boolean clockTimeEnabled = true;
     private boolean clockDateEnabled = true;
+    private boolean pomodoroProminent;
     private long lastAlarmFiredMinute = -1;
     private PhotoSource currentPhotoSource;
 
@@ -1019,6 +1021,7 @@ public final class PhotoClockActivity extends Activity {
         if (compactWeatherTemperature != null) compactWeatherTemperature.setTypeface(tf);
         if (alarmTimeText != null) alarmTimeText.setTypeface(tf);
         if (weatherLocation != null) weatherLocation.setTypeface(tf);
+        if (pomodoroText != null) pomodoroText.setTypeface(tf);
         updatePhotoClock();
 
         if (clockBgEnabled) {
@@ -1163,10 +1166,6 @@ public final class PhotoClockActivity extends Activity {
         alarmParams.setMargins(dp(4), 0, 0, dp(3));
         dateRow.addView(alarmRow, alarmParams);
 
-        clockPanel.addView(dateRow, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT));
-
         pomodoroRow = new LinearLayout(this);
         pomodoroRow.setGravity(Gravity.CENTER);
         pomodoroRow.setVisibility(View.GONE);
@@ -1183,6 +1182,10 @@ public final class PhotoClockActivity extends Activity {
                 LinearLayout.LayoutParams.WRAP_CONTENT);
         pomodoroParams.setMargins(0, dp(3), 0, 0);
         clockPanel.addView(pomodoroRow, pomodoroParams);
+
+        clockPanel.addView(dateRow, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT));
 
         weatherRow = new LinearLayout(this);
         weatherRow.setOrientation(LinearLayout.HORIZONTAL);
@@ -1386,9 +1389,15 @@ public final class PhotoClockActivity extends Activity {
         content.addView(secondaryControls, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, dp(50)));
 
+        ScrollView dialogScroll = new ScrollView(this);
+        dialogScroll.setFillViewport(true);
+        dialogScroll.addView(content, new ScrollView.LayoutParams(
+                ScrollView.LayoutParams.MATCH_PARENT,
+                ScrollView.LayoutParams.WRAP_CONTENT));
+
         pomodoroDialog = new AlertDialog.Builder(this)
                 .setTitle("番茄鐘")
-                .setView(content)
+                .setView(dialogScroll)
                 .setNegativeButton("關閉", null)
                 .create();
         pomodoroDialog.setOnDismissListener(new DialogInterface.OnDismissListener() {
@@ -1959,6 +1968,7 @@ public final class PhotoClockActivity extends Activity {
         if (pomodoroRow == null || pomodoroText == null) return;
         PomodoroHelper.Snapshot snapshot = PomodoroHelper.getSnapshot(this);
         if (!snapshot.hasSession) {
+            applyPomodoroProminence(false);
             pomodoroRow.setVisibility(View.GONE);
             return;
         }
@@ -1966,7 +1976,30 @@ public final class PhotoClockActivity extends Activity {
                 + PomodoroHelper.formatRemaining(snapshot.remainingMs);
         if (!snapshot.running) status += " · 已暫停";
         pomodoroText.setText(status);
+        applyPomodoroProminence(true);
         pomodoroRow.setVisibility(View.VISIBLE);
+    }
+
+    private void applyPomodoroProminence(boolean prominent) {
+        if (pomodoroProminent != prominent) {
+            pomodoroProminent = prominent;
+            if (photoTime != null) {
+                photoTime.setTextSize(prominent ? 32 : 64);
+                photoTime.setAlpha(prominent ? 0.78f : 1.0f);
+            }
+            if (pomodoroText != null) {
+                pomodoroText.setTextSize(prominent ? 64 : 16);
+                pomodoroText.setShadowLayer(dp(prominent ? 3 : 2), dp(1), dp(1), Color.BLACK);
+            }
+        }
+        int dimColor = Color.argb(120, 100, 100, 100);
+        if (photoTime != null) {
+            photoTime.setTextColor(isNightSleepActive ? dimColor : Color.WHITE);
+        }
+        if (pomodoroText != null) {
+            pomodoroText.setTextColor(isNightSleepActive ? dimColor
+                    : prominent ? Color.WHITE : WARNING);
+        }
     }
 
     private void updateAlarmIndicator() {
