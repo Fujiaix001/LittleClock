@@ -107,6 +107,7 @@ public final class PhotoClockActivity extends Activity {
     private AlarmIconView alarmIcon;
     private TextView alarmTimeText;
     private LinearLayout pomodoroRow;
+    private TextView pomodoroLabel;
     private TextView pomodoroText;
     private Button settingsButton;
     private Button pomodoroButton;
@@ -130,7 +131,7 @@ public final class PhotoClockActivity extends Activity {
     private SharedPreferences prefs;
     private boolean clockTimeEnabled = true;
     private boolean clockDateEnabled = true;
-    private boolean pomodoroProminent;
+    private boolean pomodoroModeLayoutActive;
     private long lastAlarmFiredMinute = -1;
     private PhotoSource currentPhotoSource;
 
@@ -1021,6 +1022,7 @@ public final class PhotoClockActivity extends Activity {
         if (compactWeatherTemperature != null) compactWeatherTemperature.setTypeface(tf);
         if (alarmTimeText != null) alarmTimeText.setTypeface(tf);
         if (weatherLocation != null) weatherLocation.setTypeface(tf);
+        if (pomodoroLabel != null) pomodoroLabel.setTypeface(tf);
         if (pomodoroText != null) pomodoroText.setTypeface(tf);
         updatePhotoClock();
 
@@ -1167,13 +1169,24 @@ public final class PhotoClockActivity extends Activity {
         dateRow.addView(alarmRow, alarmParams);
 
         pomodoroRow = new LinearLayout(this);
+        pomodoroRow.setOrientation(LinearLayout.VERTICAL);
         pomodoroRow.setGravity(Gravity.CENTER);
         pomodoroRow.setVisibility(View.GONE);
+        pomodoroLabel = new TextView(this);
+        pomodoroLabel.setTextSize(24);
+        pomodoroLabel.setTextColor(Color.WHITE);
+        pomodoroLabel.setGravity(Gravity.CENTER_HORIZONTAL);
+        pomodoroLabel.setIncludeFontPadding(false);
+        pomodoroLabel.setShadowLayer(dp(2), dp(1), dp(1), Color.BLACK);
+        pomodoroRow.addView(pomodoroLabel, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT));
         pomodoroText = new TextView(this);
-        pomodoroText.setTextSize(16);
-        pomodoroText.setTextColor(WARNING);
+        pomodoroText.setTextSize(64);
+        pomodoroText.setTextColor(Color.WHITE);
+        pomodoroText.setGravity(Gravity.CENTER_HORIZONTAL);
         pomodoroText.setIncludeFontPadding(false);
-        pomodoroText.setShadowLayer(dp(2), dp(1), dp(1), Color.BLACK);
+        pomodoroText.setShadowLayer(dp(3), dp(1), dp(1), Color.BLACK);
         pomodoroRow.addView(pomodoroText, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT));
@@ -1480,6 +1493,7 @@ public final class PhotoClockActivity extends Activity {
 
             @Override
             public boolean onScaleBegin(ScaleGestureDetector detector) {
+                if (pomodoroModeLayoutActive) return false;
                 isScalingClock = true;
                 return true;
             }
@@ -1494,7 +1508,7 @@ public final class PhotoClockActivity extends Activity {
         clockPanel.setOnLongClickListener(new View.OnLongClickListener() {
             @Override
             public boolean onLongClick(View view) {
-                if (!isScalingClock) {
+                if (!isScalingClock && !pomodoroModeLayoutActive) {
                     isDraggingClock = true;
                     clockPanel.setAlpha(0.75f);
                     return true;
@@ -1514,6 +1528,10 @@ public final class PhotoClockActivity extends Activity {
             @Override
             public boolean onTouch(View view, MotionEvent event) {
                 resetImmersiveTimeout();
+
+                if (pomodoroModeLayoutActive) {
+                    return true;
+                }
 
                 if (event.getPointerCount() > 1 || isScalingClock) {
                     if (isDraggingClock) {
@@ -1645,8 +1663,13 @@ public final class PhotoClockActivity extends Activity {
 
     private void applyClockTranslation() {
         if (clockPanel != null) {
-            clockPanel.setTranslationX(clockBaseTranslationX + burnInOffsetX);
-            clockPanel.setTranslationY(clockBaseTranslationY + burnInOffsetY);
+            if (pomodoroModeLayoutActive) {
+                clockPanel.setTranslationX(0.0f);
+                clockPanel.setTranslationY(0.0f);
+            } else {
+                clockPanel.setTranslationX(clockBaseTranslationX + burnInOffsetX);
+                clockPanel.setTranslationY(clockBaseTranslationY + burnInOffsetY);
+            }
         }
     }
 
@@ -1965,40 +1988,68 @@ public final class PhotoClockActivity extends Activity {
     }
 
     private void updatePomodoroDisplay() {
-        if (pomodoroRow == null || pomodoroText == null) return;
+        if (pomodoroRow == null || pomodoroLabel == null || pomodoroText == null) return;
         PomodoroHelper.Snapshot snapshot = PomodoroHelper.getSnapshot(this);
         if (!snapshot.hasSession) {
-            applyPomodoroProminence(false);
+            applyPomodoroModeLayout(false);
             pomodoroRow.setVisibility(View.GONE);
             return;
         }
-        String status = PomodoroHelper.phaseLabel(snapshot.phase) + " "
-                + PomodoroHelper.formatRemaining(snapshot.remainingMs);
-        if (!snapshot.running) status += " · 已暫停";
-        pomodoroText.setText(status);
-        applyPomodoroProminence(true);
+        pomodoroLabel.setText(pomodoroEnglishLabel(snapshot));
+        pomodoroText.setText(PomodoroHelper.formatRemaining(snapshot.remainingMs));
+        applyPomodoroModeLayout(true);
         pomodoroRow.setVisibility(View.VISIBLE);
     }
 
-    private void applyPomodoroProminence(boolean prominent) {
-        if (pomodoroProminent != prominent) {
-            pomodoroProminent = prominent;
-            if (photoTime != null) {
-                photoTime.setTextSize(prominent ? 32 : 64);
-                photoTime.setAlpha(prominent ? 0.78f : 1.0f);
+    private String pomodoroEnglishLabel(PomodoroHelper.Snapshot snapshot) {
+        String phase = PomodoroHelper.PHASE_SHORT_BREAK.equals(snapshot.phase) ? "Short Break"
+                : PomodoroHelper.PHASE_LONG_BREAK.equals(snapshot.phase) ? "Long Break" : "Focus";
+        return snapshot.running ? phase : phase + "\nPaused";
+    }
+
+    private void applyPomodoroModeLayout(boolean active) {
+        if (clockPanel == null) return;
+        if (pomodoroModeLayoutActive != active) {
+            pomodoroModeLayoutActive = active;
+            FrameLayout.LayoutParams params = (FrameLayout.LayoutParams) clockPanel.getLayoutParams();
+            if (active) {
+                params.gravity = Gravity.CENTER;
+                params.setMargins(0, 0, 0, 0);
+            } else {
+                params.gravity = Gravity.BOTTOM | Gravity.END;
+                params.setMargins(dp(28), dp(28), dp(16), dp(16));
             }
-            if (pomodoroText != null) {
-                pomodoroText.setTextSize(prominent ? 64 : 16);
-                pomodoroText.setShadowLayer(dp(prominent ? 3 : 2), dp(1), dp(1), Color.BLACK);
+            clockPanel.setLayoutParams(params);
+            applyClockTranslation();
+            if (!active && rootContainer != null) {
+                rootContainer.post(new Runnable() {
+                    @Override
+                    public void run() {
+                        restoreClockPosition();
+                        updateWeatherFromCache();
+                    }
+                });
             }
         }
+        if (photoTime != null) {
+            photoTime.setVisibility(active ? View.GONE
+                    : (clockTimeEnabled ? View.VISIBLE : View.GONE));
+            photoTime.setTextSize(64);
+            photoTime.setAlpha(1.0f);
+        }
+        if (dateRow != null) dateRow.setVisibility(active ? View.GONE : View.VISIBLE);
+        if (weatherRow != null && active) weatherRow.setVisibility(View.GONE);
         int dimColor = Color.argb(120, 100, 100, 100);
         if (photoTime != null) {
             photoTime.setTextColor(isNightSleepActive ? dimColor : Color.WHITE);
         }
+        if (pomodoroLabel != null) {
+            pomodoroLabel.setTextSize(24);
+            pomodoroLabel.setTextColor(isNightSleepActive ? dimColor : Color.WHITE);
+        }
         if (pomodoroText != null) {
-            pomodoroText.setTextColor(isNightSleepActive ? dimColor
-                    : prominent ? Color.WHITE : WARNING);
+            pomodoroText.setTextSize(64);
+            pomodoroText.setTextColor(isNightSleepActive ? dimColor : Color.WHITE);
         }
     }
 
