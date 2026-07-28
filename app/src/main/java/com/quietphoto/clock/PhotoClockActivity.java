@@ -89,7 +89,7 @@ public final class PhotoClockActivity extends Activity {
     private static final long WEATHER_FRESH_NORMAL_MS = 60L * 60L * 1000L;
     private static final long WEATHER_FRESH_LOW_POWER_MS = 120L * 60L * 1000L;
     private static final long WEATHER_MAX_AGE_MS = 6L * 60L * 60L * 1000L;
-    private static final long FOCUS_REMINDER_DURATION_MS = 5000L;
+    private static final long FOCUS_REMINDER_DURATION_MS = 3000L;
 
     private FrameLayout rootContainer;
     private FrameLayout polaroidContainer;
@@ -118,6 +118,8 @@ public final class PhotoClockActivity extends Activity {
     private Button pomodoroButton;
     private StateListDrawable quickActionBackground;
     private FrameLayout focusReminderOverlay;
+    private ImageView focusReminderImage;
+    private TextView focusReminderMessage;
     private AlertDialog pomodoroDialog;
     private TextView pomodoroDialogStatus;
     private Button pomodoroStartPauseButton;
@@ -492,7 +494,11 @@ public final class PhotoClockActivity extends Activity {
             rootContainer.post(new Runnable() {
                 @Override
                 public void run() {
-                    restoreClockPosition();
+                    if (pomodoroModeLayoutActive) {
+                        applyPomodoroFocusLayout();
+                    } else {
+                        restoreClockPosition();
+                    }
                 }
             });
         }
@@ -604,6 +610,15 @@ public final class PhotoClockActivity extends Activity {
 
     private void showFocusReminder() {
         if (focusReminderOverlay == null) return;
+        if (focusReminderImage != null && focusReminderMessage != null) {
+            if (random.nextBoolean()) {
+                focusReminderImage.setImageResource(R.drawable.focus_reminder_ang);
+                focusReminderMessage.setText("專心一點！");
+            } else {
+                focusReminderImage.setImageResource(R.drawable.focus_reminder_cry);
+                focusReminderMessage.setText("怎麼這麼不專心？");
+            }
+        }
         photoHandler.removeCallbacks(hideFocusReminderRunnable);
         focusReminderOverlay.setVisibility(View.VISIBLE);
         vibrateFocusReminder();
@@ -623,6 +638,22 @@ public final class PhotoClockActivity extends Activity {
             }
         } catch (RuntimeException ignored) {
             // Some tablets do not expose a usable vibrator; the visual reminder remains available.
+        }
+    }
+
+    @SuppressWarnings("deprecation")
+    private void vibratePhaseFinished() {
+        try {
+            Vibrator vibrator = (Vibrator) getSystemService(Context.VIBRATOR_SERVICE);
+            if (vibrator == null || !vibrator.hasVibrator()) return;
+            long[] pattern = new long[] { 0L, 180L, 130L, 180L, 130L, 250L };
+            if (Build.VERSION.SDK_INT >= 26) {
+                vibrator.vibrate(VibrationEffect.createWaveform(pattern, -1));
+            } else {
+                vibrator.vibrate(pattern, -1);
+            }
+        } catch (RuntimeException ignored) {
+            // Devices without a usable motor still show the phase notification.
         }
     }
 
@@ -1264,27 +1295,27 @@ public final class PhotoClockActivity extends Activity {
         focusReminderOverlay.setBackgroundColor(Color.BLACK);
         focusReminderOverlay.setClickable(true);
         focusReminderOverlay.setVisibility(View.GONE);
-        ImageView reminderImage = new ImageView(this);
-        reminderImage.setImageResource(R.drawable.focus_reminder);
-        reminderImage.setScaleType(ImageView.ScaleType.CENTER_CROP);
-        reminderImage.setContentDescription("專注提醒圖片");
-        focusReminderOverlay.addView(reminderImage, new FrameLayout.LayoutParams(
+        focusReminderImage = new ImageView(this);
+        focusReminderImage.setImageResource(R.drawable.focus_reminder_ang);
+        focusReminderImage.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        focusReminderImage.setContentDescription("專注提醒圖片");
+        focusReminderOverlay.addView(focusReminderImage, new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 FrameLayout.LayoutParams.MATCH_PARENT));
-        TextView reminderMessage = new TextView(this);
-        reminderMessage.setText("專心一點！");
-        reminderMessage.setTextSize(20);
-        reminderMessage.setTextColor(Color.WHITE);
-        reminderMessage.setTypeface(FontManager.getPomodoroChineseFont(this));
-        reminderMessage.setGravity(Gravity.CENTER);
-        reminderMessage.setPadding(dp(16), dp(10), dp(16), dp(10));
-        reminderMessage.setBackground(rounded(Color.argb(180, 0, 0, 0)));
+        focusReminderMessage = new TextView(this);
+        focusReminderMessage.setText("專心一點！");
+        focusReminderMessage.setTextSize(20);
+        focusReminderMessage.setTextColor(Color.WHITE);
+        focusReminderMessage.setTypeface(FontManager.getPomodoroChineseFont(this));
+        focusReminderMessage.setGravity(Gravity.CENTER);
+        focusReminderMessage.setPadding(dp(16), dp(10), dp(16), dp(10));
+        focusReminderMessage.setBackground(rounded(Color.argb(180, 0, 0, 0)));
         FrameLayout.LayoutParams reminderMessageParams = new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 FrameLayout.LayoutParams.WRAP_CONTENT,
                 Gravity.BOTTOM);
         reminderMessageParams.setMargins(dp(20), 0, dp(20), dp(28));
-        focusReminderOverlay.addView(reminderMessage, reminderMessageParams);
+        focusReminderOverlay.addView(focusReminderMessage, reminderMessageParams);
         rootContainer.addView(focusReminderOverlay, new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 FrameLayout.LayoutParams.MATCH_PARENT));
@@ -1390,7 +1421,7 @@ public final class PhotoClockActivity extends Activity {
         pomodoroDialog = new AlertDialog.Builder(this)
                 .setTitle("番茄鐘")
                 .setView(dialogScroll)
-                .setNegativeButton("關閉", null)
+                .setNegativeButton("回到番茄鐘", null)
                 .create();
         pomodoroDialog.setOnDismissListener(new DialogInterface.OnDismissListener() {
             @Override
@@ -1503,8 +1534,9 @@ public final class PhotoClockActivity extends Activity {
         if (clockPanel != null) {
             clockPanel.setPivotX(clockPanel.getWidth() / 2f);
             clockPanel.setPivotY(clockPanel.getHeight() / 2f);
-            clockPanel.setScaleX(clockScaleFactor);
-            clockPanel.setScaleY(clockScaleFactor);
+            float displayScale = pomodoroModeLayoutActive ? 1.0f : clockScaleFactor;
+            clockPanel.setScaleX(displayScale);
+            clockPanel.setScaleY(displayScale);
         }
     }
 
@@ -2065,6 +2097,7 @@ public final class PhotoClockActivity extends Activity {
     private void checkPomodoroCompletion() {
         PomodoroHelper.Transition transition = PomodoroHelper.finishIfDue(this);
         if (transition != null) {
+            vibratePhaseFinished();
             Toast.makeText(this, PomodoroHelper.phaseLabel(transition.finishedPhase)
                     + "結束，下一階段：" + PomodoroHelper.phaseLabel(transition.nextPhase),
                     Toast.LENGTH_LONG).show();
@@ -2106,6 +2139,7 @@ public final class PhotoClockActivity extends Activity {
                 pomodoroFocusPanel.setVisibility(View.GONE);
             }
             applyClockTranslation();
+            applyClockScale();
             if (rootContainer != null) {
                 rootContainer.post(new Runnable() {
                     @Override
@@ -2141,6 +2175,7 @@ public final class PhotoClockActivity extends Activity {
             pomodoroText.setTextSize(112);
             pomodoroText.setTextColor(isNightSleepActive ? dimColor : POMODORO_RED);
         }
+        if (active) applyPomodoroFocusLayout();
     }
 
     private void movePomodoroRowToFocusPanel() {
@@ -2154,6 +2189,40 @@ public final class PhotoClockActivity extends Activity {
         focusParams.leftMargin = -dp(46);
         focusParams.topMargin = -dp(58);
         pomodoroFocusPanel.addView(pomodoroRow, focusParams);
+    }
+
+    /** Uses a fixed focus layout while keeping the countdown inside portrait screens. */
+    private void applyPomodoroFocusLayout() {
+        if (!pomodoroModeLayoutActive || pomodoroFocusPanel == null || pomodoroRow == null
+                || pomodoroText == null || pomodoroLabel == null
+                || pomodoroRow.getParent() != pomodoroFocusPanel) return;
+        int panelWidth = pomodoroFocusPanel.getWidth();
+        if (panelWidth <= 0) {
+            pomodoroFocusPanel.post(new Runnable() {
+                @Override
+                public void run() {
+                    applyPomodoroFocusLayout();
+                }
+            });
+            return;
+        }
+        boolean portrait = getResources().getConfiguration().orientation
+                == Configuration.ORIENTATION_PORTRAIT;
+        float targetSp = portrait ? 100.0f : 112.0f;
+        pomodoroText.setTextSize(targetSp);
+        float availableWidth = panelWidth - dp(portrait ? 32 : 112);
+        float measuredWidth = pomodoroText.getPaint().measureText("180:00");
+        if (availableWidth > 0 && measuredWidth > availableWidth) {
+            targetSp *= availableWidth / measuredWidth;
+        }
+        pomodoroText.setTextSize(Math.max(portrait ? 72.0f : 84.0f, targetSp));
+        pomodoroLabel.setTextSize(portrait ? 20.0f : 24.0f);
+
+        FrameLayout.LayoutParams params = (FrameLayout.LayoutParams) pomodoroRow.getLayoutParams();
+        params.gravity = Gravity.CENTER;
+        params.leftMargin = -dp(portrait ? 16 : 46);
+        params.topMargin = -dp(portrait ? 34 : 58);
+        pomodoroRow.setLayoutParams(params);
     }
 
     private void movePomodoroRowToClockPanel() {
