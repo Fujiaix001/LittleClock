@@ -363,7 +363,7 @@ public final class PhotoClockActivity extends Activity {
     }
 
     private void extractDefaultWallpapers() {
-        if (prefs.getBoolean("wallpaper_extracted_internal", false)) {
+        if (prefs.getBoolean("wallpaper_extracted_internal_v2", false)) {
             return;
         }
         new Thread(new Runnable() {
@@ -404,7 +404,7 @@ public final class PhotoClockActivity extends Activity {
                             }
                         });
                     }
-                    prefs.edit().putBoolean("wallpaper_extracted_internal", true).apply();
+                    prefs.edit().putBoolean("wallpaper_extracted_internal_v2", true).apply();
                 } catch (Exception e) {
                     e.printStackTrace();
                 }
@@ -1170,9 +1170,11 @@ public final class PhotoClockActivity extends Activity {
         pomodoroLabel.setGravity(Gravity.CENTER_HORIZONTAL);
         pomodoroLabel.setIncludeFontPadding(false);
         pomodoroLabel.setShadowLayer(dp(2), dp(1), dp(1), Color.BLACK);
-        pomodoroRow.addView(pomodoroLabel, new LinearLayout.LayoutParams(
+        LinearLayout.LayoutParams pomodoroLabelParams = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT));
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+        pomodoroLabelParams.bottomMargin = -dp(4);
+        pomodoroRow.addView(pomodoroLabel, pomodoroLabelParams);
         pomodoroText = new TextView(this);
         pomodoroText.setTextSize(112);
         pomodoroText.setTextColor(POMODORO_RED);
@@ -2227,7 +2229,7 @@ public final class PhotoClockActivity extends Activity {
         params.leftMargin = portrait ? 0 : -dp(46);
         // The row includes the small phase label. Shift by half its height so the
         // countdown itself, rather than the combined row, is exactly centered.
-        params.topMargin = portrait ? -Math.max(dp(10), pomodoroLabel.getHeight() / 2) : -dp(58);
+        params.topMargin = portrait ? -Math.max(dp(10), pomodoroLabel.getHeight() / 2) : -dp(46);
         pomodoroRow.setLayoutParams(params);
     }
 
