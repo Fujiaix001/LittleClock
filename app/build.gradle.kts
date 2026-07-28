@@ -4,7 +4,7 @@ plugins {
 
 val versionMajor = 3
 val versionMinor = 0
-val basePatch = 6
+val basePatch = 7
 
 android {
     namespace = "com.quietphoto.clock"

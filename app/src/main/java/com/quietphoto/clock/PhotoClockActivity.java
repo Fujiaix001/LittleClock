@@ -23,8 +23,6 @@ import android.hardware.Sensor;
 import android.hardware.SensorEvent;
 import android.hardware.SensorEventListener;
 import android.hardware.SensorManager;
-import android.media.AudioManager;
-import android.media.ToneGenerator;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -42,6 +40,7 @@ import android.view.View;
 import android.view.WindowManager;
 import android.view.animation.AccelerateDecelerateInterpolator;
 import android.widget.Button;
+import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
@@ -114,7 +113,6 @@ public final class PhotoClockActivity extends Activity {
     private Button pomodoroButton;
     private StateListDrawable quickActionBackground;
     private FrameLayout focusReminderOverlay;
-    private ToneGenerator focusReminderTone;
     private AlertDialog pomodoroDialog;
     private TextView pomodoroDialogStatus;
     private Button pomodoroStartPauseButton;
@@ -283,22 +281,6 @@ public final class PhotoClockActivity extends Activity {
         }
     };
 
-    private final Runnable focusReminderSecondBeepRunnable = new Runnable() {
-        @Override
-        public void run() {
-            if (focusReminderTone != null) {
-                focusReminderTone.startTone(ToneGenerator.TONE_PROP_BEEP2, 130);
-            }
-        }
-    };
-
-    private final Runnable releaseFocusReminderToneRunnable = new Runnable() {
-        @Override
-        public void run() {
-            releaseFocusReminderTone();
-        }
-    };
-
     private final Runnable hideFocusReminderRunnable = new Runnable() {
         @Override
         public void run() {
@@ -457,10 +439,7 @@ public final class PhotoClockActivity extends Activity {
         photoHandler.removeCallbacks(mediaRefreshRunnable);
         photoHandler.removeCallbacks(weatherRefreshRunnable);
         photoHandler.removeCallbacks(pomodoroDialogTicker);
-        photoHandler.removeCallbacks(focusReminderSecondBeepRunnable);
-        photoHandler.removeCallbacks(releaseFocusReminderToneRunnable);
         photoHandler.removeCallbacks(hideFocusReminderRunnable);
-        releaseFocusReminderTone();
         if (focusReminderOverlay != null) {
             focusReminderOverlay.setVisibility(View.GONE);
         }
@@ -477,10 +456,7 @@ public final class PhotoClockActivity extends Activity {
         photoHandler.removeCallbacks(mediaRefreshRunnable);
         photoHandler.removeCallbacks(weatherRefreshRunnable);
         photoHandler.removeCallbacks(pomodoroDialogTicker);
-        photoHandler.removeCallbacks(focusReminderSecondBeepRunnable);
-        photoHandler.removeCallbacks(releaseFocusReminderToneRunnable);
         photoHandler.removeCallbacks(hideFocusReminderRunnable);
-        releaseFocusReminderTone();
         unregisterMediaObserver();
         unregisterLightSensor();
         stopPhotoSlideshow();
@@ -625,7 +601,6 @@ public final class PhotoClockActivity extends Activity {
         if (focusReminderOverlay == null) return;
         photoHandler.removeCallbacks(hideFocusReminderRunnable);
         focusReminderOverlay.setVisibility(View.VISIBLE);
-        playFocusReminderTone();
         vibrateFocusReminder();
         photoHandler.postDelayed(hideFocusReminderRunnable, FOCUS_REMINDER_DURATION_MS);
     }
@@ -642,31 +617,7 @@ public final class PhotoClockActivity extends Activity {
                 vibrator.vibrate(new long[] { 0L, 90L, 80L, 110L }, -1);
             }
         } catch (RuntimeException ignored) {
-            // Some tablets do not expose a usable vibrator; the visual and sound remain available.
-        }
-    }
-
-    private void playFocusReminderTone() {
-        releaseFocusReminderTone();
-        try {
-            focusReminderTone = new ToneGenerator(AudioManager.STREAM_ALARM, 45);
-            focusReminderTone.startTone(ToneGenerator.TONE_PROP_BEEP2, 130);
-            photoHandler.removeCallbacks(focusReminderSecondBeepRunnable);
-            photoHandler.removeCallbacks(releaseFocusReminderToneRunnable);
-            photoHandler.postDelayed(focusReminderSecondBeepRunnable, 260L);
-            photoHandler.postDelayed(releaseFocusReminderToneRunnable, 620L);
-        } catch (RuntimeException ignored) {
-            releaseFocusReminderTone();
-        }
-    }
-
-    private void releaseFocusReminderTone() {
-        if (focusReminderTone != null) {
-            try {
-                focusReminderTone.release();
-            } catch (RuntimeException ignored) {
-            }
-            focusReminderTone = null;
+            // Some tablets do not expose a usable vibrator; the visual reminder remains available.
         }
     }
 
@@ -1362,6 +1313,18 @@ public final class PhotoClockActivity extends Activity {
         content.addView(phases, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, dp(44)));
 
+        Button customDuration = button("自訂時間", Color.rgb(45, 55, 70));
+        customDuration.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                showCustomPomodoroDurationDialog();
+            }
+        });
+        LinearLayout.LayoutParams customDurationParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(40));
+        customDurationParams.setMargins(0, dp(4), 0, 0);
+        content.addView(customDuration, customDurationParams);
+
         pomodoroStartPauseButton = button("開始", ACTIVE_COLOR);
         pomodoroStartPauseButton.setOnClickListener(new View.OnClickListener() {
             @Override
@@ -1390,8 +1353,8 @@ public final class PhotoClockActivity extends Activity {
                 refreshPomodoroDialog();
             }
         });
-        Button reset = button("重設", Color.rgb(90, 53, 53));
-        reset.setOnClickListener(new View.OnClickListener() {
+        Button end = button("結束番茄鐘", Color.rgb(90, 53, 53));
+        end.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
                 PomodoroHelper.reset(PhotoClockActivity.this);
@@ -1406,9 +1369,9 @@ public final class PhotoClockActivity extends Activity {
         LinearLayout.LayoutParams skipParams = new LinearLayout.LayoutParams(0, dp(42), 2);
         skipParams.setMargins(0, dp(6), dp(4), 0);
         secondaryControls.addView(skip, skipParams);
-        LinearLayout.LayoutParams resetParams = new LinearLayout.LayoutParams(0, dp(42), 1);
-        resetParams.setMargins(dp(4), dp(6), 0, 0);
-        secondaryControls.addView(reset, resetParams);
+        LinearLayout.LayoutParams endParams = new LinearLayout.LayoutParams(0, dp(42), 1);
+        endParams.setMargins(dp(4), dp(6), 0, 0);
+        secondaryControls.addView(end, endParams);
         content.addView(secondaryControls, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, dp(50)));
 
@@ -1436,6 +1399,52 @@ public final class PhotoClockActivity extends Activity {
         refreshPomodoroDialog();
         photoHandler.removeCallbacks(pomodoroDialogTicker);
         photoHandler.postDelayed(pomodoroDialogTicker, 1000L);
+    }
+
+    private void showCustomPomodoroDurationDialog() {
+        final EditText input = new EditText(this);
+        input.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);
+        input.setSingleLine(true);
+        input.setHint("分鐘（1–180）");
+        input.setText(String.valueOf(prefs.getInt(PomodoroHelper.PREF_FOCUS_MINUTES,
+                PomodoroHelper.DEFAULT_FOCUS_MINUTES)));
+        input.setSelectAllOnFocus(true);
+        int padding = dp(20);
+        LinearLayout holder = new LinearLayout(this);
+        holder.setPadding(padding, 0, padding, 0);
+        holder.addView(input, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+        new AlertDialog.Builder(this)
+                .setTitle("自訂番茄鐘時間")
+                .setView(holder)
+                .setNegativeButton("取消", null)
+                .setPositiveButton("開始", new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface dialog, int which) {
+                        int minutes;
+                        try {
+                            minutes = Integer.parseInt(input.getText().toString().trim());
+                        } catch (NumberFormatException ignored) {
+                            Toast.makeText(PhotoClockActivity.this, "請輸入 1 到 180 分鐘",
+                                    Toast.LENGTH_SHORT).show();
+                            return;
+                        }
+                        if (minutes < 1 || minutes > 180) {
+                            Toast.makeText(PhotoClockActivity.this, "請輸入 1 到 180 分鐘",
+                                    Toast.LENGTH_SHORT).show();
+                            return;
+                        }
+                        requestNotificationPermissionIfNeeded();
+                        boolean exact = PomodoroHelper.startCustom(PhotoClockActivity.this, minutes);
+                        if (!exact) {
+                            Toast.makeText(PhotoClockActivity.this,
+                                    "未允許精準鬧鐘時，背景提醒可能延遲", Toast.LENGTH_LONG).show();
+                        }
+                        updatePomodoroDisplay();
+                        refreshPomodoroDialog();
+                    }
+                })
+                .show();
     }
 
     private static final int ACTIVE_COLOR = Color.rgb(37, 124, 137);

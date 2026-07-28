@@ -117,6 +117,27 @@ public final class PomodoroHelper {
         }
     }
 
+    /** Starts a one-off focus session without changing the user's saved 25/5/15 presets. */
+    public static boolean startCustom(Context context, int minutes) {
+        synchronized (LOCK) {
+            SharedPreferences prefs = prefs(context);
+            long remaining = Math.max(1, Math.min(180, minutes)) * MINUTE_MS;
+            long nowElapsed = SystemClock.elapsedRealtime();
+            long nowWall = System.currentTimeMillis();
+            cancelEndAlarm(context);
+            prefs.edit()
+                    .putBoolean(PREF_HAS_SESSION, true)
+                    .putBoolean(PREF_RUNNING, true)
+                    .putString(PREF_PHASE, PHASE_FOCUS)
+                    .putLong(PREF_END_ELAPSED, nowElapsed + remaining)
+                    .putLong(PREF_STARTED_ELAPSED, nowElapsed)
+                    .putLong(PREF_END_WALL, nowWall + remaining)
+                    .putLong(PREF_REMAINING_MS, remaining)
+                    .apply();
+            return scheduleEndAlarm(context, remaining);
+        }
+    }
+
     public static void pause(Context context) {
         synchronized (LOCK) {
             SharedPreferences prefs = prefs(context);
