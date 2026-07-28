@@ -124,6 +124,9 @@ public final class SettingsActivity extends Activity {
     private int alarmHour = 7;
     private int alarmMinute = 0;
     private boolean alarmRepeat = true;
+    private int pomodoroFocusMinutes = PomodoroHelper.DEFAULT_FOCUS_MINUTES;
+    private int pomodoroShortBreakMinutes = PomodoroHelper.DEFAULT_SHORT_BREAK_MINUTES;
+    private int pomodoroLongBreakMinutes = PomodoroHelper.DEFAULT_LONG_BREAK_MINUTES;
 
     private File currentDirectory;
 
@@ -214,6 +217,12 @@ public final class SettingsActivity extends Activity {
         alarmHour = prefs.getInt(AlarmHelper.PREF_ALARM_HOUR, 7);
         alarmMinute = prefs.getInt(AlarmHelper.PREF_ALARM_MINUTE, 0);
         alarmRepeat = prefs.getBoolean(AlarmHelper.PREF_ALARM_REPEAT, true);
+        pomodoroFocusMinutes = prefs.getInt(PomodoroHelper.PREF_FOCUS_MINUTES,
+                PomodoroHelper.DEFAULT_FOCUS_MINUTES);
+        pomodoroShortBreakMinutes = prefs.getInt(PomodoroHelper.PREF_SHORT_BREAK_MINUTES,
+                PomodoroHelper.DEFAULT_SHORT_BREAK_MINUTES);
+        pomodoroLongBreakMinutes = prefs.getInt(PomodoroHelper.PREF_LONG_BREAK_MINUTES,
+                PomodoroHelper.DEFAULT_LONG_BREAK_MINUTES);
 
         Set<String> saved = prefs.getStringSet(PHOTO_FOLDERS, null);
         if (saved != null && !saved.isEmpty()) {
@@ -530,6 +539,14 @@ public final class SettingsActivity extends Activity {
 
         lowPowerCheck = checkBox("低耗電模式（建議）", lowPowerMode);
         mainSection.addView(lowPowerCheck);
+
+        TextView pomodoroTitle = text("番茄鐘", 17, PRIMARY);
+        pomodoroTitle.setTypeface(Typeface.DEFAULT_BOLD);
+        pomodoroTitle.setPadding(dp(4), dp(8), dp(4), 0);
+        mainSection.addView(pomodoroTitle);
+        addPomodoroDurationRow(mainSection, "專注", 0);
+        addPomodoroDurationRow(mainSection, "短休息", 1);
+        addPomodoroDurationRow(mainSection, "長休息", 2);
 
         alarmEnabledCheck = checkBox("開啟鬧鐘", alarmEnabled);
         mainSection.addView(alarmEnabledCheck);
@@ -1294,6 +1311,9 @@ public final class SettingsActivity extends Activity {
                 .putInt(AlarmHelper.PREF_ALARM_HOUR, alarmHour)
                 .putInt(AlarmHelper.PREF_ALARM_MINUTE, alarmMinute)
                 .putBoolean(AlarmHelper.PREF_ALARM_REPEAT, alarmRepeatCheck.isChecked())
+                .putInt(PomodoroHelper.PREF_FOCUS_MINUTES, pomodoroFocusMinutes)
+                .putInt(PomodoroHelper.PREF_SHORT_BREAK_MINUTES, pomodoroShortBreakMinutes)
+                .putInt(PomodoroHelper.PREF_LONG_BREAK_MINUTES, pomodoroLongBreakMinutes)
                 .putStringSet(PHOTO_FOLDERS, new HashSet<String>(selectedFolders));
         if (weatherLocationChanged) {
             editor.remove(WEATHER_TEMPERATURE)
@@ -1310,6 +1330,56 @@ public final class SettingsActivity extends Activity {
         if (alarmTimeDisplay != null) {
             alarmTimeDisplay.setText(String.format(
                     Locale.US, "響鈴時間：%02d:%02d", alarmHour, alarmMinute));
+        }
+    }
+
+    private void addPomodoroDurationRow(LinearLayout parent, String label, final int type) {
+        LinearLayout row = new LinearLayout(this);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(dp(8), 0, dp(8), dp(2));
+        TextView name = text(label, 14, SECONDARY);
+        final TextView value = text(pomodoroMinutesForType(type) + " 分鐘", 16, ACCENT);
+        value.setGravity(Gravity.CENTER);
+        Button minus = button("−", PANEL);
+        minus.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                setPomodoroMinutes(type, pomodoroMinutesForType(type) - pomodoroStepForType(type));
+                value.setText(pomodoroMinutesForType(type) + " 分鐘");
+            }
+        });
+        Button plus = button("+", PANEL);
+        plus.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                setPomodoroMinutes(type, pomodoroMinutesForType(type) + pomodoroStepForType(type));
+                value.setText(pomodoroMinutesForType(type) + " 分鐘");
+            }
+        });
+        row.addView(name, new LinearLayout.LayoutParams(0, dp(36), 1));
+        row.addView(minus, new LinearLayout.LayoutParams(dp(36), dp(32)));
+        row.addView(value, new LinearLayout.LayoutParams(dp(76), dp(32)));
+        row.addView(plus, new LinearLayout.LayoutParams(dp(36), dp(32)));
+        parent.addView(row);
+    }
+
+    private int pomodoroMinutesForType(int type) {
+        return type == 1 ? pomodoroShortBreakMinutes
+                : type == 2 ? pomodoroLongBreakMinutes : pomodoroFocusMinutes;
+    }
+
+    private int pomodoroStepForType(int type) {
+        return type == 1 ? 1 : 5;
+    }
+
+    private void setPomodoroMinutes(int type, int minutes) {
+        int bounded = Math.max(1, Math.min(180, minutes));
+        if (type == 1) {
+            pomodoroShortBreakMinutes = bounded;
+        } else if (type == 2) {
+            pomodoroLongBreakMinutes = bounded;
+        } else {
+            pomodoroFocusMinutes = bounded;
         }
     }
 

@@ -5,6 +5,7 @@ import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.Context;
 import android.content.ContentUris;
+import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
@@ -64,6 +65,7 @@ public final class PhotoClockActivity extends Activity {
     private static final int WARNING = Color.rgb(239, 108, 108);
 
     private static final int PERMISSION_REQUEST_CODE = 100;
+    private static final int NOTIFICATION_PERMISSION_REQUEST_CODE = 101;
     private static final long PHOTO_PAN_FRAME_MS = 67;
     private static final float PHOTO_PAN_TRAVEL_FRACTION = 0.20f;
     private static final String CLOCK_POS_X_RATIO = "clock_pos_x_ratio";
@@ -98,7 +100,13 @@ public final class PhotoClockActivity extends Activity {
     private LinearLayout alarmRow;
     private AlarmIconView alarmIcon;
     private TextView alarmTimeText;
+    private LinearLayout pomodoroRow;
+    private TextView pomodoroText;
     private Button settingsButton;
+    private Button pomodoroButton;
+    private AlertDialog pomodoroDialog;
+    private TextView pomodoroDialogStatus;
+    private Button pomodoroStartPauseButton;
 
     private Bitmap photoBitmap;
     private Bitmap pendingPhotoBitmap;
@@ -243,12 +251,22 @@ public final class PhotoClockActivity extends Activity {
             }
             updatePhotoClock();
             checkForegroundAlarm();
+            checkPomodoroCompletion();
             checkNightSleepMode();
             if (!isNightSleepActive && !photoLoading && !photoFiles.isEmpty()
                     && SystemClock.elapsedRealtime() >= nextPhotoAt) {
                 loadNextPhoto();
             }
             photoHandler.postDelayed(this, 1000);
+        }
+    };
+
+    private final Runnable pomodoroDialogTicker = new Runnable() {
+        @Override
+        public void run() {
+            if (pomodoroDialog == null || !pomodoroDialog.isShowing()) return;
+            refreshPomodoroDialog();
+            photoHandler.postDelayed(this, 1000L);
         }
     };
 
@@ -379,6 +397,7 @@ public final class PhotoClockActivity extends Activity {
         scheduleBurnIn();
         scheduleWeatherRefresh();
         updateAlarmIndicator();
+        updatePomodoroDisplay();
         rootContainer.post(new Runnable() {
             @Override
             public void run() {
@@ -397,6 +416,7 @@ public final class PhotoClockActivity extends Activity {
         photoHandler.removeCallbacks(burnInRunnable);
         photoHandler.removeCallbacks(mediaRefreshRunnable);
         photoHandler.removeCallbacks(weatherRefreshRunnable);
+        photoHandler.removeCallbacks(pomodoroDialogTicker);
         unregisterMediaObserver();
         unregisterLightSensor();
         stopPhotoSlideshow();
@@ -409,6 +429,7 @@ public final class PhotoClockActivity extends Activity {
         photoHandler.removeCallbacks(burnInRunnable);
         photoHandler.removeCallbacks(mediaRefreshRunnable);
         photoHandler.removeCallbacks(weatherRefreshRunnable);
+        photoHandler.removeCallbacks(pomodoroDialogTicker);
         unregisterMediaObserver();
         unregisterLightSensor();
         stopPhotoSlideshow();
@@ -1024,6 +1045,23 @@ public final class PhotoClockActivity extends Activity {
                 LinearLayout.LayoutParams.WRAP_CONTENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT));
 
+        pomodoroRow = new LinearLayout(this);
+        pomodoroRow.setGravity(Gravity.CENTER);
+        pomodoroRow.setVisibility(View.GONE);
+        pomodoroText = new TextView(this);
+        pomodoroText.setTextSize(16);
+        pomodoroText.setTextColor(WARNING);
+        pomodoroText.setIncludeFontPadding(false);
+        pomodoroText.setShadowLayer(dp(2), dp(1), dp(1), Color.BLACK);
+        pomodoroRow.addView(pomodoroText, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT));
+        LinearLayout.LayoutParams pomodoroParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+        pomodoroParams.setMargins(0, dp(3), 0, 0);
+        clockPanel.addView(pomodoroRow, pomodoroParams);
+
         weatherRow = new LinearLayout(this);
         weatherRow.setOrientation(LinearLayout.HORIZONTAL);
         weatherRow.setGravity(Gravity.CENTER);
@@ -1098,8 +1136,157 @@ public final class PhotoClockActivity extends Activity {
         folderParams.setMargins(dp(16), dp(16), 0, 0);
         rootContainer.addView(settingsButton, folderParams);
 
+        pomodoroButton = new Button(this);
+        pomodoroButton.setText("番茄鐘");
+        pomodoroButton.setTextColor(Color.WHITE);
+        pomodoroButton.setTextSize(17);
+        pomodoroButton.setAllCaps(false);
+        pomodoroButton.setAlpha(0.0f);
+        pomodoroButton.setVisibility(View.GONE);
+        pomodoroButton.setBackground(folderBg);
+        pomodoroButton.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                photoHandler.removeCallbacks(hideImmersiveRunnable);
+                showPomodoroDialog();
+            }
+        });
+        FrameLayout.LayoutParams pomodoroButtonParams = new FrameLayout.LayoutParams(
+                dp(130), dp(48), Gravity.TOP | Gravity.START);
+        pomodoroButtonParams.setMargins(dp(154), dp(16), 0, 0);
+        rootContainer.addView(pomodoroButton, pomodoroButtonParams);
+
         updatePhotoClock();
         return rootContainer;
+    }
+
+    private void showPomodoroDialog() {
+        if (isFinishing() || isDestroyed()) return;
+        LinearLayout content = new LinearLayout(this);
+        content.setOrientation(LinearLayout.VERTICAL);
+        content.setPadding(dp(20), dp(8), dp(20), dp(4));
+
+        pomodoroDialogStatus = text("", 22, PRIMARY);
+        pomodoroDialogStatus.setGravity(Gravity.CENTER);
+        pomodoroDialogStatus.setTypeface(Typeface.DEFAULT_BOLD);
+        content.addView(pomodoroDialogStatus, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(46)));
+
+        TextView phaseHint = text("切換階段會重設該階段的時間", 13, SECONDARY);
+        phaseHint.setGravity(Gravity.CENTER);
+        content.addView(phaseHint, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(28)));
+
+        LinearLayout phases = new LinearLayout(this);
+        phases.setGravity(Gravity.CENTER);
+        addPomodoroPhaseButton(phases, "專注", PomodoroHelper.PHASE_FOCUS);
+        addPomodoroPhaseButton(phases, "短休息", PomodoroHelper.PHASE_SHORT_BREAK);
+        addPomodoroPhaseButton(phases, "長休息", PomodoroHelper.PHASE_LONG_BREAK);
+        content.addView(phases, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(44)));
+
+        LinearLayout controls = new LinearLayout(this);
+        controls.setGravity(Gravity.CENTER);
+        pomodoroStartPauseButton = button("開始", ACTIVE_COLOR);
+        pomodoroStartPauseButton.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                PomodoroHelper.Snapshot snapshot = PomodoroHelper.getSnapshot(PhotoClockActivity.this);
+                if (snapshot.running) {
+                    PomodoroHelper.pause(PhotoClockActivity.this);
+                } else {
+                    requestNotificationPermissionIfNeeded();
+                    boolean exact = PomodoroHelper.startOrResume(PhotoClockActivity.this);
+                    if (!exact) {
+                        Toast.makeText(PhotoClockActivity.this,
+                                "未允許精準鬧鐘時，背景提醒可能延遲", Toast.LENGTH_LONG).show();
+                    }
+                }
+                updatePomodoroDisplay();
+                refreshPomodoroDialog();
+            }
+        });
+        Button skip = button("跳到下一階段", Color.rgb(45, 55, 70));
+        skip.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                PomodoroHelper.skip(PhotoClockActivity.this);
+                updatePomodoroDisplay();
+                refreshPomodoroDialog();
+            }
+        });
+        Button reset = button("重設", Color.rgb(90, 53, 53));
+        reset.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                PomodoroHelper.reset(PhotoClockActivity.this);
+                updatePomodoroDisplay();
+                refreshPomodoroDialog();
+            }
+        });
+        controls.addView(pomodoroStartPauseButton, new LinearLayout.LayoutParams(0, dp(42), 1));
+        LinearLayout.LayoutParams skipParams = new LinearLayout.LayoutParams(0, dp(42), 1);
+        skipParams.setMargins(dp(6), 0, dp(6), 0);
+        controls.addView(skip, skipParams);
+        controls.addView(reset, new LinearLayout.LayoutParams(0, dp(42), 1));
+        content.addView(controls, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(48)));
+
+        pomodoroDialog = new AlertDialog.Builder(this)
+                .setTitle("番茄鐘")
+                .setView(content)
+                .setNegativeButton("關閉", null)
+                .create();
+        pomodoroDialog.setOnDismissListener(new DialogInterface.OnDismissListener() {
+            @Override
+            public void onDismiss(DialogInterface dialog) {
+                photoHandler.removeCallbacks(pomodoroDialogTicker);
+                pomodoroDialog = null;
+                pomodoroDialogStatus = null;
+                pomodoroStartPauseButton = null;
+            }
+        });
+        pomodoroDialog.show();
+        refreshPomodoroDialog();
+        photoHandler.removeCallbacks(pomodoroDialogTicker);
+        photoHandler.postDelayed(pomodoroDialogTicker, 1000L);
+    }
+
+    private static final int ACTIVE_COLOR = Color.rgb(37, 124, 137);
+
+    private void addPomodoroPhaseButton(LinearLayout parent, String label, final String phase) {
+        Button button = button(label, Color.rgb(45, 55, 70));
+        button.setTextSize(13);
+        button.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                PomodoroHelper.prepare(PhotoClockActivity.this, phase);
+                updatePomodoroDisplay();
+                refreshPomodoroDialog();
+            }
+        });
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, dp(36), 1);
+        params.setMargins(dp(2), 0, dp(2), 0);
+        parent.addView(button, params);
+    }
+
+    private void refreshPomodoroDialog() {
+        if (pomodoroDialogStatus == null || pomodoroStartPauseButton == null) return;
+        PomodoroHelper.Snapshot snapshot = PomodoroHelper.getSnapshot(this);
+        String status = PomodoroHelper.phaseLabel(snapshot.phase) + "  "
+                + PomodoroHelper.formatRemaining(snapshot.remainingMs);
+        if (!snapshot.running) status += snapshot.hasSession ? "（已暫停）" : "（尚未開始）";
+        pomodoroDialogStatus.setText(status);
+        pomodoroStartPauseButton.setText(snapshot.running ? "暫停" : "開始");
+    }
+
+    private void requestNotificationPermissionIfNeeded() {
+        if (Build.VERSION.SDK_INT >= 33
+                && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)
+                != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(new String[] { Manifest.permission.POST_NOTIFICATIONS },
+                    NOTIFICATION_PERMISSION_REQUEST_CODE);
+        }
     }
 
     private void applyClockScale() {
@@ -1306,6 +1493,24 @@ public final class PhotoClockActivity extends Activity {
         return baseKey + (landscape ? "_landscape" : "_portrait");
     }
 
+    private TextView text(String content, int sizeSp, int color) {
+        TextView view = new TextView(this);
+        view.setText(content);
+        view.setTextSize(sizeSp);
+        view.setTextColor(color);
+        return view;
+    }
+
+    private Button button(String label, int color) {
+        Button view = new Button(this);
+        view.setText(label);
+        view.setTextColor(PRIMARY);
+        view.setTextSize(15);
+        view.setAllCaps(false);
+        view.setBackground(rounded(color));
+        return view;
+    }
+
     private GradientDrawable rounded(int color) {
         GradientDrawable drawable = new GradientDrawable();
         drawable.setColor(color);
@@ -1320,6 +1525,11 @@ public final class PhotoClockActivity extends Activity {
         settingsButton.animate().cancel();
         settingsButton.setVisibility(View.VISIBLE);
         settingsButton.animate().alpha(0.88f).setDuration(180).start();
+        if (pomodoroButton != null) {
+            pomodoroButton.animate().cancel();
+            pomodoroButton.setVisibility(View.VISIBLE);
+            pomodoroButton.animate().alpha(0.88f).setDuration(180).start();
+        }
     }
 
     private void hideSettingsButton() {
@@ -1333,6 +1543,15 @@ public final class PhotoClockActivity extends Activity {
                 settingsButton.setVisibility(View.GONE);
             }
         }).start();
+        if (pomodoroButton != null && pomodoroButton.getVisibility() == View.VISIBLE) {
+            pomodoroButton.animate().cancel();
+            pomodoroButton.animate().alpha(0.0f).setDuration(260).withEndAction(new Runnable() {
+                @Override
+                public void run() {
+                    pomodoroButton.setVisibility(View.GONE);
+                }
+            }).start();
+        }
     }
 
     private void startPhotoSlideshow() {
@@ -1569,6 +1788,31 @@ public final class PhotoClockActivity extends Activity {
             }
         }
         updateAlarmIndicator();
+        updatePomodoroDisplay();
+    }
+
+    private void checkPomodoroCompletion() {
+        PomodoroHelper.Transition transition = PomodoroHelper.finishIfDue(this);
+        if (transition != null) {
+            Toast.makeText(this, PomodoroHelper.phaseLabel(transition.finishedPhase)
+                    + "結束，下一階段：" + PomodoroHelper.phaseLabel(transition.nextPhase),
+                    Toast.LENGTH_LONG).show();
+            updatePomodoroDisplay();
+        }
+    }
+
+    private void updatePomodoroDisplay() {
+        if (pomodoroRow == null || pomodoroText == null) return;
+        PomodoroHelper.Snapshot snapshot = PomodoroHelper.getSnapshot(this);
+        if (!snapshot.hasSession) {
+            pomodoroRow.setVisibility(View.GONE);
+            return;
+        }
+        String status = PomodoroHelper.phaseLabel(snapshot.phase) + " "
+                + PomodoroHelper.formatRemaining(snapshot.remainingMs);
+        if (!snapshot.running) status += " · 已暫停";
+        pomodoroText.setText(status);
+        pomodoroRow.setVisibility(View.VISIBLE);
     }
 
     private void updateAlarmIndicator() {
