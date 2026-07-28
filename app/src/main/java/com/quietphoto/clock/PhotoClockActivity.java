@@ -31,6 +31,8 @@ import android.os.Bundle;
 import android.os.Environment;
 import android.os.Handler;
 import android.os.SystemClock;
+import android.os.VibrationEffect;
+import android.os.Vibrator;
 import android.provider.MediaStore;
 import android.view.Gravity;
 import android.view.GestureDetector;
@@ -618,7 +620,24 @@ public final class PhotoClockActivity extends Activity {
         photoHandler.removeCallbacks(hideFocusReminderRunnable);
         focusReminderOverlay.setVisibility(View.VISIBLE);
         playFocusReminderTone();
+        vibrateFocusReminder();
         photoHandler.postDelayed(hideFocusReminderRunnable, FOCUS_REMINDER_DURATION_MS);
+    }
+
+    @SuppressWarnings("deprecation")
+    private void vibrateFocusReminder() {
+        try {
+            Vibrator vibrator = (Vibrator) getSystemService(Context.VIBRATOR_SERVICE);
+            if (vibrator == null || !vibrator.hasVibrator()) return;
+            if (Build.VERSION.SDK_INT >= 26) {
+                vibrator.vibrate(VibrationEffect.createOneShot(70L,
+                        VibrationEffect.DEFAULT_AMPLITUDE));
+            } else {
+                vibrator.vibrate(70L);
+            }
+        } catch (RuntimeException ignored) {
+            // Some tablets do not expose a usable vibrator; the visual and sound remain available.
+        }
     }
 
     private void playFocusReminderTone() {
@@ -1271,7 +1290,7 @@ public final class PhotoClockActivity extends Activity {
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 FrameLayout.LayoutParams.MATCH_PARENT));
         TextView reminderMessage = new TextView(this);
-        reminderMessage.setText("專注一下，倒數仍在進行");
+        reminderMessage.setText("專心一點！");
         reminderMessage.setTextSize(20);
         reminderMessage.setTextColor(Color.WHITE);
         reminderMessage.setTypeface(Typeface.DEFAULT_BOLD);
@@ -1317,8 +1336,6 @@ public final class PhotoClockActivity extends Activity {
         content.addView(phases, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, dp(44)));
 
-        LinearLayout controls = new LinearLayout(this);
-        controls.setGravity(Gravity.CENTER);
         pomodoroStartPauseButton = button("開始", ACTIVE_COLOR);
         pomodoroStartPauseButton.setOnClickListener(new View.OnClickListener() {
             @Override
@@ -1338,7 +1355,7 @@ public final class PhotoClockActivity extends Activity {
                 refreshPomodoroDialog();
             }
         });
-        Button skip = button("跳到下一階段", Color.rgb(45, 55, 70));
+        Button skip = button("下一階段", Color.rgb(45, 55, 70));
         skip.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -1356,13 +1373,18 @@ public final class PhotoClockActivity extends Activity {
                 refreshPomodoroDialog();
             }
         });
-        controls.addView(pomodoroStartPauseButton, new LinearLayout.LayoutParams(0, dp(42), 1));
-        LinearLayout.LayoutParams skipParams = new LinearLayout.LayoutParams(0, dp(42), 1);
-        skipParams.setMargins(dp(6), 0, dp(6), 0);
-        controls.addView(skip, skipParams);
-        controls.addView(reset, new LinearLayout.LayoutParams(0, dp(42), 1));
-        content.addView(controls, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, dp(48)));
+        content.addView(pomodoroStartPauseButton, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(42)));
+        LinearLayout secondaryControls = new LinearLayout(this);
+        secondaryControls.setGravity(Gravity.CENTER);
+        LinearLayout.LayoutParams skipParams = new LinearLayout.LayoutParams(0, dp(42), 2);
+        skipParams.setMargins(0, dp(6), dp(4), 0);
+        secondaryControls.addView(skip, skipParams);
+        LinearLayout.LayoutParams resetParams = new LinearLayout.LayoutParams(0, dp(42), 1);
+        resetParams.setMargins(dp(4), dp(6), 0, 0);
+        secondaryControls.addView(reset, resetParams);
+        content.addView(secondaryControls, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(50)));
 
         pomodoroDialog = new AlertDialog.Builder(this)
                 .setTitle("番茄鐘")
