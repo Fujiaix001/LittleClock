@@ -6,6 +6,7 @@ import android.content.DialogInterface;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
+import android.content.res.ColorStateList;
 import android.content.Context;
 import android.hardware.Sensor;
 import android.hardware.SensorManager;
@@ -83,12 +84,14 @@ public final class SettingsActivity extends Activity {
     private static final int MIN_INTERVAL = 5;
     private static final int MAX_INTERVAL = 600;
 
-    private static final int BACKGROUND = Color.rgb(11, 15, 20);
-    private static final int PANEL = Color.rgb(24, 31, 40);
-    private static final int PRIMARY = Color.rgb(242, 238, 230);
-    private static final int SECONDARY = Color.rgb(143, 152, 163);
-    private static final int ACCENT = Color.rgb(72, 184, 199);
-    private static final int ACTIVE_CHIP = Color.rgb(37, 124, 137);
+    private static final int BACKGROUND = Color.rgb(9, 13, 18);
+    private static final int PANEL = Color.rgb(19, 26, 35);
+    private static final int PANEL_RAISED = Color.rgb(27, 37, 49);
+    private static final int STROKE = Color.rgb(42, 56, 72);
+    private static final int PRIMARY = Color.rgb(244, 247, 249);
+    private static final int SECONDARY = Color.rgb(155, 169, 184);
+    private static final int ACCENT = Color.rgb(104, 213, 216);
+    private static final int ACTIVE_CHIP = Color.rgb(30, 118, 126);
 
     private final Set<String> selectedFolders = new LinkedHashSet<String>();
     private int selectedInterval;
@@ -161,6 +164,7 @@ public final class SettingsActivity extends Activity {
     private final ExecutorService networkExecutor = Executors.newSingleThreadExecutor();
 
     private float displayDensity;
+    private Typeface uiTypeface;
 
     private static class StorageVolumeItem {
         final String label;
@@ -176,6 +180,7 @@ public final class SettingsActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         displayDensity = getResources().getDisplayMetrics().density;
+        uiTypeface = FontManager.getPomodoroChineseFont(this);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         getWindow().setFlags(
                 WindowManager.LayoutParams.FLAG_FULLSCREEN,
@@ -371,13 +376,20 @@ public final class SettingsActivity extends Activity {
 
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(dp(18), dp(12), dp(18), dp(12));
+        root.setPadding(dp(20), dp(16), dp(20), dp(24));
         applySystemBarInsets(root);
 
         LinearLayout titleRow = new LinearLayout(this);
         titleRow.setGravity(Gravity.CENTER_VERTICAL);
-        TextView title = text("設定", 23, PRIMARY);
-        title.setTypeface(Typeface.DEFAULT_BOLD);
+        LinearLayout titleStack = new LinearLayout(this);
+        titleStack.setOrientation(LinearLayout.VERTICAL);
+        TextView eyebrow = text("LITTLECLOCK", 11, ACCENT);
+        if (Build.VERSION.SDK_INT >= 21) eyebrow.setLetterSpacing(0.18f);
+        TextView title = text("設定", 28, PRIMARY);
+        titleStack.addView(eyebrow, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, dp(20)));
+        titleStack.addView(title, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, dp(38)));
 
         selectionText = text("", 14, ACCENT);
         selectionText.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
@@ -398,27 +410,27 @@ public final class SettingsActivity extends Activity {
             }
         });
 
-        titleRow.addView(title, new LinearLayout.LayoutParams(0, dp(48), 1));
+        titleRow.addView(titleStack, new LinearLayout.LayoutParams(0, dp(62), 1));
         titleRow.addView(cancel, new LinearLayout.LayoutParams(dp(80), dp(44)));
         LinearLayout.LayoutParams saveParams = new LinearLayout.LayoutParams(dp(80), dp(44));
         saveParams.setMargins(dp(10), 0, 0, 0);
         titleRow.addView(save, saveParams);
         root.addView(titleRow);
 
+        addSectionHeader(root, "顯示與功能", "DISPLAY & TOOLS");
+
         // 常用播放與顯示設定。
         LinearLayout mainSection = new LinearLayout(this);
         mainSection.setOrientation(LinearLayout.VERTICAL);
-        mainSection.setPadding(dp(12), dp(10), dp(12), dp(10));
+        mainSection.setPadding(dp(16), dp(14), dp(16), dp(16));
         mainSection.setBackground(panelBackground());
 
         LinearLayout intervalHeader = new LinearLayout(this);
         intervalHeader.setGravity(Gravity.CENTER_VERTICAL);
 
         TextView intervalTitle = text("相片停留時間", 17, PRIMARY);
-        intervalTitle.setTypeface(Typeface.DEFAULT_BOLD);
 
         intervalDisplay = text(selectedInterval + " 秒", 18, ACCENT);
-        intervalDisplay.setTypeface(Typeface.DEFAULT_BOLD);
         intervalDisplay.setGravity(Gravity.END);
 
         intervalHeader.addView(intervalTitle, new LinearLayout.LayoutParams(0, dp(32), 1));
@@ -485,6 +497,9 @@ public final class SettingsActivity extends Activity {
                 new String[] { "填滿畫面", "完整顯示", "柔和背景（選用）" },
                 Math.max(0, Math.min(2, selectedDisplayMode)));
 
+        addDivider(mainSection);
+        addInlineSectionHeader(mainSection, "天氣", "WEATHER");
+
         weatherEnabledCheck = checkBox("顯示天氣（僅 Wi-Fi）", weatherEnabled);
         mainSection.addView(weatherEnabledCheck);
 
@@ -540,14 +555,14 @@ public final class SettingsActivity extends Activity {
         lowPowerCheck = checkBox("低耗電模式（建議）", lowPowerMode);
         mainSection.addView(lowPowerCheck);
 
-        TextView pomodoroTitle = text("番茄鐘", 17, PRIMARY);
-        pomodoroTitle.setTypeface(Typeface.DEFAULT_BOLD);
-        pomodoroTitle.setPadding(dp(4), dp(8), dp(4), 0);
-        mainSection.addView(pomodoroTitle);
+        addDivider(mainSection);
+        addInlineSectionHeader(mainSection, "番茄鐘", "POMODORO");
         addPomodoroDurationRow(mainSection, "專注", 0);
         addPomodoroDurationRow(mainSection, "短休息", 1);
         addPomodoroDurationRow(mainSection, "長休息", 2);
 
+        addDivider(mainSection);
+        addInlineSectionHeader(mainSection, "鬧鐘", "ALARM");
         alarmEnabledCheck = checkBox("開啟鬧鐘", alarmEnabled);
         mainSection.addView(alarmEnabledCheck);
 
@@ -557,7 +572,6 @@ public final class SettingsActivity extends Activity {
         alarmOptions.setVisibility(alarmEnabled ? View.VISIBLE : View.GONE);
 
         alarmTimeDisplay = text("", 16, ACCENT);
-        alarmTimeDisplay.setTypeface(Typeface.DEFAULT_BOLD);
         alarmTimeDisplay.setPadding(dp(8), dp(4), dp(8), dp(4));
         updateAlarmTimeText();
 
@@ -639,6 +653,8 @@ public final class SettingsActivity extends Activity {
             }
         });
 
+        addDivider(mainSection);
+        addInlineSectionHeader(mainSection, "時鐘顯示", "CLOCK");
         clockTimeCheck = checkBox("顯示時間", clockTimeEnabled);
         mainSection.addView(clockTimeCheck);
 
@@ -648,11 +664,12 @@ public final class SettingsActivity extends Activity {
         clockBgCheck = checkBox("時間底板", clockBgEnabled);
         mainSection.addView(clockBgCheck);
 
+        addDivider(mainSection);
+        addInlineSectionHeader(mainSection, "夜間模式", "NIGHT");
         nightModeCheck = checkBox("排程暗屏", nightModeEnabled);
         mainSection.addView(nightModeCheck);
 
         nightScheduleText = text("", 15, ACCENT);
-        nightScheduleText.setTypeface(Typeface.DEFAULT_BOLD);
         nightScheduleText.setPadding(dp(8), dp(4), dp(8), 0);
         mainSection.addView(nightScheduleText, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, dp(32)));
@@ -758,7 +775,8 @@ public final class SettingsActivity extends Activity {
         advancedOptions.addView(clearHidden, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, dp(38)));
 
-        final Button advancedToggle = button("顯示進階設定", PANEL);
+        addDivider(mainSection);
+        final Button advancedToggle = button("顯示進階設定", PANEL_RAISED);
         advancedToggle.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
@@ -781,11 +799,13 @@ public final class SettingsActivity extends Activity {
         // 相簿資料夾選擇。
         LinearLayout albumHeader = new LinearLayout(this);
         albumHeader.setGravity(Gravity.CENTER_VERTICAL);
-        TextView albumTitle = text("相簿", 17, PRIMARY);
-        albumTitle.setTypeface(Typeface.DEFAULT_BOLD);
+        TextView albumTitle = text("相簿", 19, PRIMARY);
         albumHeader.addView(albumTitle, new LinearLayout.LayoutParams(0, dp(36), 1));
         albumHeader.addView(selectionText, new LinearLayout.LayoutParams(0, dp(36), 2));
-        root.addView(albumHeader);
+        LinearLayout.LayoutParams albumHeaderParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(44));
+        albumHeaderParams.setMargins(dp(2), dp(8), dp(2), 0);
+        root.addView(albumHeader, albumHeaderParams);
 
         LinearLayout pathRow = new LinearLayout(this);
         pathRow.setGravity(Gravity.CENTER_VERTICAL);
@@ -806,9 +826,11 @@ public final class SettingsActivity extends Activity {
         currentFolderCheck.setText("使用目前資料夾中的照片（包含子目錄）");
         currentFolderCheck.setTextColor(PRIMARY);
         currentFolderCheck.setTextSize(16);
+        currentFolderCheck.setTypeface(uiTypeface);
         currentFolderCheck.setPadding(dp(8), dp(4), dp(8), dp(4));
-        currentFolderCheck.setScaleX(0.85f);
-        currentFolderCheck.setScaleY(0.85f);
+        currentFolderCheck.setScaleX(0.94f);
+        currentFolderCheck.setScaleY(0.94f);
+        tintCheckBox(currentFolderCheck);
         currentFolderCheck.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
@@ -883,8 +905,12 @@ public final class SettingsActivity extends Activity {
         final EditText input = new EditText(this);
         input.setSingleLine(true);
         input.setHint("例如 Taipei、Tainan");
+        input.setTextColor(PRIMARY);
+        input.setHintTextColor(SECONDARY);
+        input.setTypeface(uiTypeface);
+        input.setBackground(fieldBackground());
         input.setPadding(dp(18), dp(8), dp(18), dp(8));
-        new AlertDialog.Builder(this)
+        AlertDialog searchDialog = new AlertDialog.Builder(this)
                 .setTitle("搜尋英文地名")
                 .setView(input)
                 .setNegativeButton("取消", null)
@@ -900,7 +926,9 @@ public final class SettingsActivity extends Activity {
                         searchWeatherLocations(query);
                     }
                 })
-                .show();
+                .create();
+        searchDialog.show();
+        styleDialog(searchDialog);
     }
 
     private void searchWeatherLocations(final String query) {
@@ -941,7 +969,7 @@ public final class SettingsActivity extends Activity {
         }
         String[] names = new String[results.size()];
         for (int i = 0; i < results.size(); i++) names[i] = results.get(i).displayName;
-        new AlertDialog.Builder(this)
+        AlertDialog resultsDialog = new AlertDialog.Builder(this)
                 .setTitle("選擇地點")
                 .setItems(names, new DialogInterface.OnClickListener() {
                     @Override
@@ -956,7 +984,9 @@ public final class SettingsActivity extends Activity {
                     }
                 })
                 .setNegativeButton("取消", null)
-                .show();
+                .create();
+        resultsDialog.show();
+        styleDialog(resultsDialog);
     }
 
     private double parseDouble(String value) {
@@ -971,11 +1001,12 @@ public final class SettingsActivity extends Activity {
     private Spinner addSpinner(LinearLayout parent, String label, String[] items, int selectedIndex) {
         LinearLayout row = new LinearLayout(this);
         row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(0, dp(3), 0, dp(3));
 
         TextView labelView = text(label, 16, PRIMARY);
-        labelView.setTypeface(Typeface.DEFAULT_BOLD);
-
         Spinner spinner = new Spinner(this);
+        spinner.setBackground(fieldBackground());
+        spinner.setPadding(dp(10), 0, dp(8), 0);
         ArrayAdapter<String> adapter = new CompactSpinnerAdapter(items);
         adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
         spinner.setAdapter(adapter);
@@ -1010,6 +1041,9 @@ public final class SettingsActivity extends Activity {
             if (view instanceof TextView) {
                 TextView textView = (TextView) view;
                 textView.setTextSize(15);
+                textView.setTextColor(dropDown ? PRIMARY : ACCENT);
+                textView.setTypeface(uiTypeface);
+                textView.setBackgroundColor(dropDown ? PANEL_RAISED : Color.TRANSPARENT);
                 textView.setGravity(Gravity.CENTER_VERTICAL);
                 textView.setMinHeight(0);
                 textView.setMinimumHeight(0);
@@ -1027,10 +1061,12 @@ public final class SettingsActivity extends Activity {
         checkBox.setText(label);
         checkBox.setTextColor(PRIMARY);
         checkBox.setTextSize(15);
+        checkBox.setTypeface(uiTypeface);
         checkBox.setChecked(checked);
-        checkBox.setPadding(dp(4), dp(2), dp(4), dp(2));
-        checkBox.setScaleX(0.85f);
-        checkBox.setScaleY(0.85f);
+        checkBox.setPadding(dp(6), dp(5), dp(6), dp(5));
+        checkBox.setScaleX(0.94f);
+        checkBox.setScaleY(0.94f);
+        tintCheckBox(checkBox);
         return checkBox;
     }
 
@@ -1152,6 +1188,8 @@ public final class SettingsActivity extends Activity {
         row.setPadding(dp(8), dp(2), dp(8), dp(2));
 
         final CheckBox check = new CheckBox(this);
+        check.setTypeface(uiTypeface);
+        tintCheckBox(check);
         final boolean isChecked = selectedFolders.contains(volume.rootDir.getAbsolutePath());
         final boolean hasChildSelected = isAnyChildSelected(volume.rootDir);
         check.setChecked(isChecked || hasChildSelected);
@@ -1171,7 +1209,6 @@ public final class SettingsActivity extends Activity {
                 LinearLayout.LayoutParams.WRAP_CONTENT));
 
         TextView name = text(volume.label, 17, ACCENT);
-        name.setTypeface(Typeface.DEFAULT_BOLD);
         name.setPadding(dp(10), dp(4), dp(10), dp(4));
         name.setOnClickListener(new View.OnClickListener() {
             @Override
@@ -1191,6 +1228,8 @@ public final class SettingsActivity extends Activity {
         row.setPadding(dp(8), dp(2), dp(8), dp(2));
 
         final CheckBox check = new CheckBox(this);
+        check.setTypeface(uiTypeface);
+        tintCheckBox(check);
         final boolean isChecked = selectedFolders.contains(directory.getAbsolutePath());
         final boolean hasChildSelected = isAnyChildSelected(directory);
         check.setChecked(isChecked || hasChildSelected);
@@ -1388,6 +1427,8 @@ public final class SettingsActivity extends Activity {
         view.setText(content);
         view.setTextSize(sizeSp);
         view.setTextColor(color);
+        view.setTypeface(uiTypeface);
+        view.setGravity(Gravity.CENTER_VERTICAL);
         return view;
     }
 
@@ -1396,10 +1437,15 @@ public final class SettingsActivity extends Activity {
         button.setText(label);
         button.setTextColor(PRIMARY);
         button.setTextSize(15);
+        button.setTypeface(uiTypeface);
         button.setAllCaps(false);
+        button.setMinHeight(0);
+        button.setMinimumHeight(0);
+        button.setPadding(dp(12), 0, dp(12), 0);
         GradientDrawable drawable = new GradientDrawable();
         drawable.setColor(color);
-        drawable.setCornerRadius(dp(8));
+        drawable.setCornerRadius(dp(13));
+        drawable.setStroke(dp(1), color == ACTIVE_CHIP ? ACCENT : STROKE);
         button.setBackground(drawable);
         return button;
     }
@@ -1407,8 +1453,81 @@ public final class SettingsActivity extends Activity {
     private GradientDrawable panelBackground() {
         GradientDrawable drawable = new GradientDrawable();
         drawable.setColor(PANEL);
-        drawable.setCornerRadius(dp(10));
+        drawable.setCornerRadius(dp(18));
+        drawable.setStroke(dp(1), STROKE);
         return drawable;
+    }
+
+    private GradientDrawable fieldBackground() {
+        GradientDrawable drawable = new GradientDrawable();
+        drawable.setColor(PANEL_RAISED);
+        drawable.setCornerRadius(dp(12));
+        drawable.setStroke(dp(1), STROKE);
+        return drawable;
+    }
+
+    private void addSectionHeader(LinearLayout parent, String title, String caption) {
+        LinearLayout header = new LinearLayout(this);
+        header.setGravity(Gravity.CENTER_VERTICAL);
+        TextView titleView = text(title, 19, PRIMARY);
+        TextView captionView = text(caption, 10, SECONDARY);
+        captionView.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
+        if (Build.VERSION.SDK_INT >= 21) captionView.setLetterSpacing(0.14f);
+        header.addView(titleView, new LinearLayout.LayoutParams(0, dp(44), 1));
+        header.addView(captionView, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, dp(44)));
+        parent.addView(header);
+    }
+
+    private void addInlineSectionHeader(LinearLayout parent, String title, String caption) {
+        LinearLayout header = new LinearLayout(this);
+        header.setGravity(Gravity.CENTER_VERTICAL);
+        TextView titleView = text(title, 17, PRIMARY);
+        TextView captionView = text(caption, 10, ACCENT);
+        captionView.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
+        if (Build.VERSION.SDK_INT >= 21) captionView.setLetterSpacing(0.12f);
+        header.addView(titleView, new LinearLayout.LayoutParams(0, dp(38), 1));
+        header.addView(captionView, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, dp(38)));
+        parent.addView(header);
+    }
+
+    private void addDivider(LinearLayout parent) {
+        View divider = new View(this);
+        divider.setBackgroundColor(STROKE);
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(1));
+        params.setMargins(0, dp(14), 0, dp(8));
+        parent.addView(divider, params);
+    }
+
+    private void tintCheckBox(CheckBox checkBox) {
+        if (Build.VERSION.SDK_INT >= 21) {
+            checkBox.setButtonTintList(new ColorStateList(
+                    new int[][] { new int[] { android.R.attr.state_checked }, new int[] {} },
+                    new int[] { ACCENT, SECONDARY }));
+        }
+    }
+
+    private void applyUiFont(View view) {
+        if (view instanceof TextView) ((TextView) view).setTypeface(uiTypeface);
+        if (view instanceof ViewGroup) {
+            ViewGroup group = (ViewGroup) view;
+            for (int i = 0; i < group.getChildCount(); i++) applyUiFont(group.getChildAt(i));
+        }
+    }
+
+    private void styleDialog(AlertDialog dialog) {
+        if (dialog == null) return;
+        if (dialog.getWindow() != null) {
+            dialog.getWindow().setBackgroundDrawable(panelBackground());
+            dialog.getWindow().setDimAmount(0.72f);
+        }
+        applyUiFont(dialog.getWindow() == null ? null : dialog.getWindow().getDecorView());
+        Button positive = dialog.getButton(AlertDialog.BUTTON_POSITIVE);
+        Button negative = dialog.getButton(AlertDialog.BUTTON_NEGATIVE);
+        if (positive != null) positive.setTextColor(ACCENT);
+        if (negative != null) negative.setTextColor(SECONDARY);
     }
 
     private int dp(int value) {

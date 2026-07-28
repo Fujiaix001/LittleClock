@@ -37,6 +37,7 @@ import android.view.GestureDetector;
 import android.view.MotionEvent;
 import android.view.ScaleGestureDetector;
 import android.view.View;
+import android.view.ViewGroup;
 import android.view.WindowManager;
 import android.view.animation.AccelerateDecelerateInterpolator;
 import android.widget.Button;
@@ -63,10 +64,14 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 public final class PhotoClockActivity extends Activity {
-    private static final int BACKGROUND = Color.rgb(11, 15, 20);
-    private static final int PRIMARY = Color.rgb(242, 238, 230);
-    private static final int SECONDARY = Color.rgb(143, 152, 163);
+    private static final int BACKGROUND = Color.rgb(9, 13, 18);
+    private static final int PANEL = Color.rgb(19, 26, 35);
+    private static final int PANEL_RAISED = Color.rgb(27, 37, 49);
+    private static final int STROKE = Color.rgb(42, 56, 72);
+    private static final int PRIMARY = Color.rgb(244, 247, 249);
+    private static final int SECONDARY = Color.rgb(155, 169, 184);
     private static final int WARNING = Color.rgb(239, 108, 108);
+    private static final int POMODORO_RED = Color.rgb(255, 104, 104);
 
     private static final int PERMISSION_REQUEST_CODE = 100;
     private static final int NOTIFICATION_PERMISSION_REQUEST_CODE = 101;
@@ -1136,8 +1141,8 @@ public final class PhotoClockActivity extends Activity {
                 LinearLayout.LayoutParams.WRAP_CONTENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT));
         pomodoroText = new TextView(this);
-        pomodoroText.setTextSize(100);
-        pomodoroText.setTextColor(Color.WHITE);
+        pomodoroText.setTextSize(112);
+        pomodoroText.setTextColor(POMODORO_RED);
         pomodoroText.setGravity(Gravity.CENTER_HORIZONTAL);
         pomodoroText.setIncludeFontPadding(false);
         pomodoroText.setShadowLayer(dp(3), dp(1), dp(1), Color.BLACK);
@@ -1296,7 +1301,7 @@ public final class PhotoClockActivity extends Activity {
 
         pomodoroDialogStatus = text("", 22, PRIMARY);
         pomodoroDialogStatus.setGravity(Gravity.CENTER);
-        pomodoroDialogStatus.setTypeface(Typeface.DEFAULT_BOLD);
+        pomodoroDialogStatus.setTypeface(FontManager.getPomodoroChineseFont(this));
         content.addView(pomodoroDialogStatus, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, dp(46)));
 
@@ -1313,7 +1318,7 @@ public final class PhotoClockActivity extends Activity {
         content.addView(phases, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, dp(44)));
 
-        Button customDuration = button("自訂時間", Color.rgb(45, 55, 70));
+        Button customDuration = button("自訂時間", PANEL_RAISED);
         customDuration.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -1345,7 +1350,7 @@ public final class PhotoClockActivity extends Activity {
                 refreshPomodoroDialog();
             }
         });
-        Button skip = button("下一階段", Color.rgb(45, 55, 70));
+        Button skip = button("下一階段", PANEL_RAISED);
         skip.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -1354,7 +1359,7 @@ public final class PhotoClockActivity extends Activity {
                 refreshPomodoroDialog();
             }
         });
-        Button end = button("結束番茄鐘", Color.rgb(90, 53, 53));
+        Button end = button("結束番茄", Color.rgb(104, 50, 56));
         end.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -1397,6 +1402,7 @@ public final class PhotoClockActivity extends Activity {
             }
         });
         pomodoroDialog.show();
+        styleModernDialog(pomodoroDialog);
         refreshPomodoroDialog();
         photoHandler.removeCallbacks(pomodoroDialogTicker);
         photoHandler.postDelayed(pomodoroDialogTicker, 1000L);
@@ -1407,6 +1413,11 @@ public final class PhotoClockActivity extends Activity {
         input.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);
         input.setSingleLine(true);
         input.setHint("分鐘（1–180）");
+        input.setTextColor(PRIMARY);
+        input.setHintTextColor(SECONDARY);
+        input.setTypeface(FontManager.getPomodoroChineseFont(this));
+        input.setBackground(rounded(PANEL_RAISED));
+        input.setPadding(dp(14), dp(8), dp(14), dp(8));
         input.setText(String.valueOf(prefs.getInt(PomodoroHelper.PREF_FOCUS_MINUTES,
                 PomodoroHelper.DEFAULT_FOCUS_MINUTES)));
         input.setSelectAllOnFocus(true);
@@ -1415,7 +1426,7 @@ public final class PhotoClockActivity extends Activity {
         holder.setPadding(padding, 0, padding, 0);
         holder.addView(input, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
-        new AlertDialog.Builder(this)
+        AlertDialog customDialog = new AlertDialog.Builder(this)
                 .setTitle("自訂番茄鐘時間")
                 .setView(holder)
                 .setNegativeButton("取消", null)
@@ -1446,13 +1457,15 @@ public final class PhotoClockActivity extends Activity {
                         if (pomodoroDialog != null) pomodoroDialog.dismiss();
                     }
                 })
-                .show();
+                .create();
+        customDialog.show();
+        styleModernDialog(customDialog);
     }
 
     private static final int ACTIVE_COLOR = Color.rgb(37, 124, 137);
 
     private void addPomodoroPhaseButton(LinearLayout parent, String label, final String phase) {
-        Button button = button(label, Color.rgb(45, 55, 70));
+        Button button = button(label, PANEL_RAISED);
         button.setTextSize(13);
         button.setOnClickListener(new View.OnClickListener() {
             @Override
@@ -1713,7 +1726,11 @@ public final class PhotoClockActivity extends Activity {
         view.setText(label);
         view.setTextColor(PRIMARY);
         view.setTextSize(15);
+        view.setTypeface(FontManager.getPomodoroChineseFont(this));
         view.setAllCaps(false);
+        view.setMinHeight(0);
+        view.setMinimumHeight(0);
+        view.setPadding(dp(12), 0, dp(12), 0);
         view.setBackground(rounded(color));
         return view;
     }
@@ -1721,8 +1738,30 @@ public final class PhotoClockActivity extends Activity {
     private GradientDrawable rounded(int color) {
         GradientDrawable drawable = new GradientDrawable();
         drawable.setColor(color);
-        drawable.setCornerRadius(dp(10));
+        drawable.setCornerRadius(dp(14));
+        if (color == PANEL || color == PANEL_RAISED) drawable.setStroke(dp(1), STROKE);
         return drawable;
+    }
+
+    private void applyUiFont(View view) {
+        if (view instanceof TextView) {
+            ((TextView) view).setTypeface(FontManager.getPomodoroChineseFont(this));
+        }
+        if (view instanceof ViewGroup) {
+            ViewGroup group = (ViewGroup) view;
+            for (int i = 0; i < group.getChildCount(); i++) applyUiFont(group.getChildAt(i));
+        }
+    }
+
+    private void styleModernDialog(AlertDialog dialog) {
+        if (dialog == null || dialog.getWindow() == null) return;
+        dialog.getWindow().setBackgroundDrawable(rounded(PANEL));
+        dialog.getWindow().setDimAmount(0.72f);
+        applyUiFont(dialog.getWindow().getDecorView());
+        Button positive = dialog.getButton(AlertDialog.BUTTON_POSITIVE);
+        Button negative = dialog.getButton(AlertDialog.BUTTON_NEGATIVE);
+        if (positive != null) positive.setTextColor(Color.rgb(104, 213, 216));
+        if (negative != null) negative.setTextColor(SECONDARY);
     }
 
     private void showSettingsButton() {
@@ -2099,8 +2138,8 @@ public final class PhotoClockActivity extends Activity {
             pomodoroLabel.setTextColor(isNightSleepActive ? dimColor : Color.WHITE);
         }
         if (pomodoroText != null) {
-            pomodoroText.setTextSize(100);
-            pomodoroText.setTextColor(isNightSleepActive ? dimColor : Color.WHITE);
+            pomodoroText.setTextSize(112);
+            pomodoroText.setTextColor(isNightSleepActive ? dimColor : POMODORO_RED);
         }
     }
 
@@ -2112,8 +2151,8 @@ public final class PhotoClockActivity extends Activity {
         FrameLayout.LayoutParams focusParams = new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.WRAP_CONTENT,
                 FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.CENTER);
-        focusParams.leftMargin = -dp(28);
-        focusParams.topMargin = -dp(38);
+        focusParams.leftMargin = -dp(46);
+        focusParams.topMargin = -dp(58);
         pomodoroFocusPanel.addView(pomodoroRow, focusParams);
     }
 
