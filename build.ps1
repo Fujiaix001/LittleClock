@@ -7,7 +7,6 @@ $content = Get-Content -Raw $buildConfig
 $versionMajor = [regex]::Match($content, 'val versionMajor = (\d+)').Groups[1].Value
 $versionMinor = [regex]::Match($content, 'val versionMinor = (\d+)').Groups[1].Value
 $basePatch = [int][regex]::Match($content, 'val basePatch = (\d+)').Groups[1].Value
-$standardPatch = $basePatch + 1
 
 $variants = @(
     @{
@@ -18,7 +17,7 @@ $variants = @(
     @{
         Gradle = 'StandardRelease'
         Source = 'standard\release\app-standard-release.apk'
-        Name = "LittleClock-v${versionMajor}.${versionMinor}.${standardPatch}.apk"
+        Name = "LittleClock-v${versionMajor}.${versionMinor}.${basePatch}.apk"
     }
 )
 

@@ -1,10 +1,19 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
 }
 
 val versionMajor = 4
 val versionMinor = 0
-val basePatch = 5
+val basePatch = 7
+val appVersionCode = (versionMajor * 10_000) + (versionMinor * 100) + basePatch
+val releasePropertiesFile = rootProject.file("keystore.properties")
+val releaseProperties = Properties().apply {
+    if (releasePropertiesFile.isFile) {
+        releasePropertiesFile.inputStream().use { load(it) }
+    }
+}
 
 android {
     namespace = "com.quietphoto.clock"
@@ -14,7 +23,7 @@ android {
         applicationId = "com.quietphoto.clock"
         minSdk = 17
         targetSdk = 36
-        versionCode = (versionMajor * 100) + (versionMinor * 10) + basePatch
+        versionCode = appVersionCode
         versionName = "$versionMajor.$versionMinor.$basePatch"
     }
 
@@ -22,15 +31,27 @@ android {
     productFlavors {
         create("storopiaTest") {
             dimension = "fontBundle"
-            versionCode = (versionMajor * 100) + (versionMinor * 10) + basePatch
+            applicationIdSuffix = ".storopia"
+            versionCode = appVersionCode
             versionName = "$versionMajor.$versionMinor.$basePatch-test-android4.2-storopia"
             buildConfigField("boolean", "INCLUDE_STOROPIA", "true")
         }
         create("standard") {
             dimension = "fontBundle"
-            versionCode = (versionMajor * 100) + (versionMinor * 10) + basePatch
+            versionCode = appVersionCode
             versionName = "$versionMajor.$versionMinor.$basePatch"
             buildConfigField("boolean", "INCLUDE_STOROPIA", "false")
+        }
+    }
+
+    signingConfigs {
+        create("release") {
+            if (releasePropertiesFile.isFile) {
+                storeFile = rootProject.file(releaseProperties.getProperty("storeFile"))
+                storePassword = releaseProperties.getProperty("storePassword")
+                keyAlias = releaseProperties.getProperty("keyAlias")
+                keyPassword = releaseProperties.getProperty("keyPassword")
+            }
         }
     }
 
@@ -45,7 +66,9 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            signingConfig = signingConfigs.getByName("debug")
+            if (releasePropertiesFile.isFile) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
     }
 
@@ -61,6 +84,16 @@ android {
     lint {
         abortOnError = true
         checkReleaseBuilds = true
+    }
+}
+
+tasks.configureEach {
+    if (name.startsWith("package") && name.contains("Release")) {
+        doFirst {
+            check(releasePropertiesFile.isFile) {
+                "Release signing requires keystore.properties. See README.md."
+            }
+        }
     }
 }
 

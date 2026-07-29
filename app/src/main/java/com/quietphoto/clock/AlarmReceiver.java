@@ -41,7 +41,12 @@ public class AlarmReceiver extends BroadcastReceiver {
         if (Build.VERSION.SDK_INT >= 29) {
             // API 29+ 透過 Foreground Service 播放鬧鐘，避免背景啟動 Activity 受限
             Intent serviceIntent = new Intent(context, AlarmService.class);
-            context.startForegroundService(serviceIntent);
+            try {
+                context.startForegroundService(serviceIntent);
+            } catch (RuntimeException ignored) {
+                // A vendor restriction must not turn a scheduled alarm into silence.
+                launchLegacy(context);
+            }
         } else {
             // API < 29 維持原本的 startActivity 路徑
             launchLegacy(context);

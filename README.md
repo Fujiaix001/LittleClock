@@ -1,4 +1,4 @@
-# ⏰ 小時鐘 (LittleClock)
+# ⏰ 小時鐘 (LittleClock) 4.0.7
 
 一款輕量、無廣告、無背景常駐的 Android 相片時鐘；僅使用 AndroidX ExifInterface 處理相片方向。
 適用於新舊平板、手機、電視盒與 Amazon Fire 平板。
@@ -10,6 +10,7 @@
 - **時鐘縮放**：支援雙指縮放，並記憶偏好設定。
 - **播放手勢**：左滑下一張、右滑上一張；一輪播完前不重複。
 - **低耗電模式**：預設停用像素分析、柔和背景與裝飾效果，適合低階裝置。
+- **漸進式相簿**：找到第一張可用照片就開始播放；其餘照片在背景建立索引。SAF 資料夾會定期低優先序更新，不打斷播放。
 - **相片管理**：長按相片可收藏或隱藏，並可選擇只播放收藏。
 - **三種顯示方式**：填滿、完整顯示，以及選用的低解析度柔和背景。
 - **相片展示與輕量解碼**：
@@ -30,6 +31,7 @@
   - 精簡排列預設開啟：不顯示地名時，天氣圖示與溫度會放在日期左側；也可切回獨立天氣列。
 - **App Icon**：深藍底、青綠相片山脈與 `12:00`，包含 API 17 舊式 PNG 與 API 26+ Adaptive Icon。
 - **夜間暗屏**：支援定時降低亮度並暫停相片動畫。
+- **番茄鐘與鬧鐘**：番茄鐘可在背景結束時震動提醒；鬧鐘會在開機、時區／系統時間變更與精準鬧鐘權限授予後重新排程。
 - **字型授權資訊**：
   - 開源字型採 SIL OFL 1.1；Storopia 的分發授權尚未確認。
 
@@ -39,7 +41,7 @@
 
 本專案使用原生 Android SDK 與 Gradle 構建；唯一執行期依賴是向下相容的 AndroidX ExifInterface 1.3.7。
 
-支援範圍為 Android 4.2（API 17）至 Android 16（API 36）。Android 17 目前為 Beta，專案已依 API 37 的公開相容性變更完成靜態檢查，但仍應在正式版系統映像推出後補跑裝置測試。
+支援範圍為 Android 4.2（API 17）至 Android 16（API 36）。Android 5.0 以上以系統資料夾選擇器授權相簿；Android 4.2–4.4 保留舊版資料夾瀏覽器。
 
 ### 使用 PowerShell 一鍵構建：
 ```powershell
@@ -47,8 +49,10 @@
 ```
 構建會固定產生一組雙版本：
 
-- `dist/LittleClock-v2.2.0-test-storopia.apk`：含 Storopia，僅供內部測試。
-- `dist/LittleClock-v2.2.1.apk`：功能相同，但 APK 內完全不含 Storopia。
+- `dist/LittleClock-v4.0.7-test-android4.2-storopia.apk`：含 Storopia，僅供內部測試，使用獨立套件名稱。
+- `dist/LittleClock-v4.0.7.apk`：標準正式版，不含 Storopia。
+
+首次建立 release APK 前，請妥善保存專案根目錄的 `keystore.properties` 與 `keystore/littleclock-release.jks`；兩者已被 Git 忽略，遺失後無法用同一簽章更新既有正式版。
 
 ---
 

@@ -2,6 +2,7 @@ package com.quietphoto.clock;
 
 import android.Manifest;
 import android.app.Activity;
+import android.app.ActivityManager;
 import android.app.AlertDialog;
 import android.content.Context;
 import android.content.DialogInterface;
@@ -38,6 +39,7 @@ import android.view.MotionEvent;
 import android.view.ScaleGestureDetector;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.ViewConfiguration;
 import android.view.WindowManager;
 import android.view.animation.AccelerateDecelerateInterpolator;
 import android.widget.Button;
@@ -87,12 +89,18 @@ public final class PhotoClockActivity extends Activity {
     private static final int MAX_PHOTO_FILES = 50000;
     private static final int MAX_PHOTO_DEPTH = 12;
     private static final long IMMERSIVE_TIMEOUT_MS = 5000L;
+    private static final long PHOTO_ACTION_LONG_PRESS_MS = 900L;
     private static final long BURN_IN_INTERVAL_MS = 180000L;
     private static final long MEDIA_REFRESH_DELAY_MS = 2000L;
     private static final long WEATHER_FRESH_NORMAL_MS = 60L * 60L * 1000L;
     private static final long WEATHER_FRESH_LOW_POWER_MS = 120L * 60L * 1000L;
     private static final long WEATHER_MAX_AGE_MS = 6L * 60L * 60L * 1000L;
     private static final long FOCUS_REMINDER_DURATION_MS = 3000L;
+    private static final long SAF_RESCAN_NORMAL_MS = 60L * 60L * 1000L;
+    private static final long SAF_RESCAN_LOW_POWER_MS = 2L * 60L * 60L * 1000L;
+    private static final int WALLPAPER_PACK_VERSION = 4;
+    private static final String WALLPAPER_PACK_VERSION_KEY = "wallpaper_pack_version";
+    private static final String GESTURE_HINT_SEEN_KEY = "gesture_hint_seen_v1";
 
     private FrameLayout rootContainer;
     private FrameLayout polaroidContainer;
@@ -123,6 +131,7 @@ public final class PhotoClockActivity extends Activity {
     private FrameLayout focusReminderOverlay;
     private ImageView focusReminderImage;
     private TextView focusReminderMessage;
+    private TextView gestureHint;
     private AlertDialog pomodoroDialog;
     private TextView pomodoroDialogStatus;
     private Button pomodoroStartPauseButton;
@@ -164,6 +173,7 @@ public final class PhotoClockActivity extends Activity {
     private boolean activityResumed;
     private boolean firstSlideshowStart = true;
     private boolean startupPhotoDisplayed;
+    private int photoFileLimit = MAX_PHOTO_FILES;
 
     private long photoIntervalMs = 45000L;
     private long photoPanDurationMs = 43000L;
@@ -228,6 +238,17 @@ public final class PhotoClockActivity extends Activity {
     private float burnInOffsetY;
     private ScaleGestureDetector scaleGestureDetector;
     private GestureDetector photoGestureDetector;
+    private boolean photoActionLongPressPending;
+    private float photoActionDownX;
+    private float photoActionDownY;
+    private final Runnable photoActionLongPressRunnable = new Runnable() {
+        @Override
+        public void run() {
+            if (!photoActionLongPressPending || pomodoroModeLayoutActive || photoLoading) return;
+            photoActionLongPressPending = false;
+            showPhotoActions();
+        }
+    };
     private final Random random = new Random();
     private SensorManager sensorManager;
     private Sensor lightSensor;
@@ -296,7 +317,26 @@ public final class PhotoClockActivity extends Activity {
                     && SystemClock.elapsedRealtime() >= nextPhotoAt) {
                 loadNextPhoto();
             }
-            photoHandler.postDelayed(this, 1000);
+            schedulePhotoTicker();
+        }
+    };
+
+    private final Runnable hideGestureHintRunnable = new Runnable() {
+        @Override
+        public void run() {
+            if (gestureHint != null) gestureHint.setVisibility(View.GONE);
+        }
+    };
+
+    private final Runnable safCatalogRefreshRunnable = new Runnable() {
+        @Override
+        public void run() {
+            if (!activityResumed || isFinishing() || isDestroyed()) return;
+            if (hasTreePhotoSource()) {
+                invalidatePhotoCatalog();
+                startPhotoSlideshow();
+            }
+            scheduleSafCatalogRefresh();
         }
     };
 
@@ -373,6 +413,8 @@ public final class PhotoClockActivity extends Activity {
         super.onCreate(savedInstanceState);
         FontManager.prefetch(this.getApplicationContext());
         prefs = getSharedPreferences(SettingsActivity.PREFERENCES, MODE_PRIVATE);
+        removeExpiredTreeSources();
+        photoFileLimit = resolvePhotoFileLimit();
         migrateOrientationClockLayouts();
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
 
@@ -382,11 +424,45 @@ public final class PhotoClockActivity extends Activity {
         setupPhotoGestures();
         createMediaObserver();
         extractDefaultWallpapers();
+        AlarmHelper.updateAlarmSchedule(this);
         checkAndRequestStoragePermission();
     }
 
+    /** Auto Backup restores preference strings but not SAF grants; discard only invalid tree entries. */
+    private void removeExpiredTreeSources() {
+        if (Build.VERSION.SDK_INT < 21) return;
+        Set<String> saved = prefs.getStringSet(SettingsActivity.PHOTO_FOLDERS, null);
+        if (saved == null || saved.isEmpty()) return;
+        Set<String> valid = new HashSet<String>();
+        boolean changed = false;
+        List<android.content.UriPermission> grants = getContentResolver().getPersistedUriPermissions();
+        for (String raw : saved) {
+            String source = SettingsActivity.normalizeFolderSource(raw);
+            Uri treeUri = SettingsActivity.treeUriFromSource(source);
+            if (treeUri == null) {
+                valid.add(source);
+                continue;
+            }
+            boolean readable = false;
+            for (android.content.UriPermission grant : grants) {
+                if (treeUri.equals(grant.getUri()) && grant.isReadPermission()) {
+                    readable = true;
+                    break;
+                }
+            }
+            if (readable) {
+                valid.add(source);
+            } else {
+                changed = true;
+            }
+        }
+        if (changed) {
+            prefs.edit().putStringSet(SettingsActivity.PHOTO_FOLDERS, valid).apply();
+        }
+    }
+
     private void extractDefaultWallpapers() {
-        if (prefs.getBoolean("wallpaper_extracted_internal_v2", false)) {
+        if (prefs.getInt(WALLPAPER_PACK_VERSION_KEY, 0) >= WALLPAPER_PACK_VERSION) {
             return;
         }
         new Thread(new Runnable() {
@@ -427,7 +503,17 @@ public final class PhotoClockActivity extends Activity {
                             }
                         });
                     }
-                    prefs.edit().putBoolean("wallpaper_extracted_internal_v2", true).apply();
+                    prefs.edit().putInt(WALLPAPER_PACK_VERSION_KEY, WALLPAPER_PACK_VERSION)
+                            .remove("wallpaper_extracted_internal_v2").apply();
+                    runOnUiThread(new Runnable() {
+                        @Override
+                        public void run() {
+                            if (activityResumed) {
+                                invalidatePhotoCatalog();
+                                startPhotoSlideshow();
+                            }
+                        }
+                    });
                 } catch (Exception e) {
                     e.printStackTrace();
                 }
@@ -476,6 +562,8 @@ public final class PhotoClockActivity extends Activity {
         registerLightSensor();
         scheduleBurnIn();
         scheduleWeatherRefresh();
+        scheduleSafCatalogRefresh();
+        showGestureHintIfNeeded();
         updateAlarmIndicator();
         updatePomodoroDisplay();
         rootContainer.post(new Runnable() {
@@ -488,14 +576,17 @@ public final class PhotoClockActivity extends Activity {
 
     @Override
     protected void onPause() {
+        cancelPhotoActionLongPress();
         if (currentPhotoSource != null) {
             prefs.edit().putString(LAST_PHOTO_KEY, currentPhotoSource.key()).apply();
         }
         activityResumed = false;
         photoHandler.removeCallbacks(hideImmersiveRunnable);
+        photoHandler.removeCallbacks(hideGestureHintRunnable);
         photoHandler.removeCallbacks(burnInRunnable);
         photoHandler.removeCallbacks(mediaRefreshRunnable);
         photoHandler.removeCallbacks(weatherRefreshRunnable);
+        photoHandler.removeCallbacks(safCatalogRefreshRunnable);
         photoHandler.removeCallbacks(pomodoroDialogTicker);
         photoHandler.removeCallbacks(hideFocusReminderRunnable);
         if (focusReminderOverlay != null) {
@@ -509,10 +600,13 @@ public final class PhotoClockActivity extends Activity {
 
     @Override
     protected void onDestroy() {
+        cancelPhotoActionLongPress();
         photoHandler.removeCallbacks(hideImmersiveRunnable);
+        photoHandler.removeCallbacks(hideGestureHintRunnable);
         photoHandler.removeCallbacks(burnInRunnable);
         photoHandler.removeCallbacks(mediaRefreshRunnable);
         photoHandler.removeCallbacks(weatherRefreshRunnable);
+        photoHandler.removeCallbacks(safCatalogRefreshRunnable);
         photoHandler.removeCallbacks(pomodoroDialogTicker);
         photoHandler.removeCallbacks(hideFocusReminderRunnable);
         unregisterMediaObserver();
@@ -608,13 +702,42 @@ public final class PhotoClockActivity extends Activity {
                         return true;
                     }
 
-                    @Override
-                    public void onLongPress(MotionEvent event) {
-                        if (!isTouchOnClock(event)) {
-                            showPhotoActions();
-                        }
-                    }
                 });
+        // The system default is about half a second and is too easy to trigger while swiping.
+        photoGestureDetector.setIsLongpressEnabled(false);
+    }
+
+    private void handlePhotoActionLongPress(MotionEvent event) {
+        if (event == null) return;
+        int action = event.getActionMasked();
+        if (action == MotionEvent.ACTION_DOWN) {
+            if (!isTouchOnClock(event) && !pomodoroModeLayoutActive && !photoLoading) {
+                photoActionDownX = event.getRawX();
+                photoActionDownY = event.getRawY();
+                photoActionLongPressPending = true;
+                photoHandler.removeCallbacks(photoActionLongPressRunnable);
+                photoHandler.postDelayed(photoActionLongPressRunnable, PHOTO_ACTION_LONG_PRESS_MS);
+            }
+            return;
+        }
+
+        if (!photoActionLongPressPending) return;
+        if (action == MotionEvent.ACTION_MOVE) {
+            int touchSlop = ViewConfiguration.get(this).getScaledTouchSlop();
+            if (Math.abs(event.getRawX() - photoActionDownX) > touchSlop
+                    || Math.abs(event.getRawY() - photoActionDownY) > touchSlop
+                    || event.getPointerCount() > 1) {
+                cancelPhotoActionLongPress();
+            }
+        } else if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL
+                || event.getPointerCount() > 1) {
+            cancelPhotoActionLongPress();
+        }
+    }
+
+    private void cancelPhotoActionLongPress() {
+        photoActionLongPressPending = false;
+        photoHandler.removeCallbacks(photoActionLongPressRunnable);
     }
 
     @Override
@@ -627,6 +750,7 @@ public final class PhotoClockActivity extends Activity {
             showFocusReminder();
             return true;
         }
+        handlePhotoActionLongPress(event);
         if (scaleGestureDetector != null) {
             scaleGestureDetector.onTouchEvent(event);
         }
@@ -672,6 +796,8 @@ public final class PhotoClockActivity extends Activity {
             }
         }
         photoHandler.removeCallbacks(hideFocusReminderRunnable);
+        photoHandler.removeCallbacks(hideGestureHintRunnable);
+        if (gestureHint != null) gestureHint.setVisibility(View.GONE);
         focusReminderOverlay.setVisibility(View.VISIBLE);
         vibrateFocusReminder();
         photoHandler.postDelayed(hideFocusReminderRunnable, FOCUS_REMINDER_DURATION_MS);
@@ -754,47 +880,83 @@ public final class PhotoClockActivity extends Activity {
         }
         final String key = source.key();
         final boolean favorite = favoritePhotos.contains(key);
-        String[] actions = {
-                favorite ? "取消收藏" : "加入收藏",
-                "隱藏此相片",
-                "取消"
-        };
+        LinearLayout content = new LinearLayout(this);
+        content.setOrientation(LinearLayout.VERTICAL);
+        content.setPadding(dp(16), dp(14), dp(16), dp(12));
 
-        android.widget.ArrayAdapter<String> adapter = new android.widget.ArrayAdapter<String>(this, android.R.layout.select_dialog_item, actions) {
+        TextView title = new TextView(this);
+        title.setText("相片操作");
+        title.setTextColor(PRIMARY);
+        title.setTextSize(18);
+        title.setTypeface(FontManager.getPomodoroChineseFont(this));
+        content.addView(title, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(28)));
+
+        TextView favoriteAction = photoActionRow(favorite ? "取消收藏" : "加入收藏", PRIMARY, PANEL_RAISED);
+        TextView hideAction = photoActionRow("隱藏此相片", WARNING, PANEL_RAISED);
+        TextView cancelAction = photoActionRow("取消", SECONDARY, PANEL);
+        LinearLayout.LayoutParams rowParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(40));
+        rowParams.topMargin = dp(6);
+        content.addView(favoriteAction, rowParams);
+        LinearLayout.LayoutParams hideParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(40));
+        hideParams.topMargin = dp(6);
+        content.addView(hideAction, hideParams);
+        LinearLayout.LayoutParams cancelParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(34));
+        cancelParams.topMargin = dp(6);
+        content.addView(cancelAction, cancelParams);
+
+        final AlertDialog dialog = new AlertDialog.Builder(this).setView(content).create();
+        favoriteAction.setOnClickListener(new View.OnClickListener() {
             @Override
-            public View getView(int position, View convertView, android.view.ViewGroup parent) {
-                TextView view = (TextView) super.getView(position, convertView, parent);
-                view.setPadding(dp(16), dp(8), dp(16), dp(8));
-                view.setMinHeight(0); // Override default minHeight on older Android
-                return view;
+            public void onClick(View view) {
+                if (favorite) favoritePhotos.remove(key);
+                else favoritePhotos.add(key);
+                prefs.edit().putStringSet(
+                        SettingsActivity.FAVORITE_PHOTOS,
+                        new HashSet<String>(favoritePhotos)).apply();
+                Toast.makeText(PhotoClockActivity.this,
+                        favorite ? "已取消收藏" : "已加入收藏",
+                        Toast.LENGTH_SHORT).show();
+                if (favoritesOnly && favorite) startPhotoSlideshow();
+                dialog.dismiss();
             }
-        };
+        });
+        hideAction.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                hiddenPhotos.add(key);
+                prefs.edit().putStringSet(
+                        SettingsActivity.HIDDEN_PHOTOS,
+                        new HashSet<String>(hiddenPhotos)).apply();
+                startPhotoSlideshow();
+                dialog.dismiss();
+            }
+        });
+        cancelAction.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                dialog.dismiss();
+            }
+        });
+        dialog.show();
+        styleModernDialog(dialog);
+    }
 
-        new AlertDialog.Builder(this)
-                .setTitle("相片操作")
-                .setAdapter(adapter, new android.content.DialogInterface.OnClickListener() {
-                    @Override
-                    public void onClick(android.content.DialogInterface dialog, int which) {
-                        if (which == 0) {
-                            if (favorite) favoritePhotos.remove(key);
-                            else favoritePhotos.add(key);
-                            prefs.edit().putStringSet(
-                                    SettingsActivity.FAVORITE_PHOTOS,
-                                    new HashSet<String>(favoritePhotos)).apply();
-                            Toast.makeText(PhotoClockActivity.this,
-                                    favorite ? "已取消收藏" : "已加入收藏",
-                                    Toast.LENGTH_SHORT).show();
-                            if (favoritesOnly && favorite) startPhotoSlideshow();
-                        } else if (which == 1) {
-                            hiddenPhotos.add(key);
-                            prefs.edit().putStringSet(
-                                    SettingsActivity.HIDDEN_PHOTOS,
-                                    new HashSet<String>(hiddenPhotos)).apply();
-                            startPhotoSlideshow();
-                        }
-                    }
-                })
-                .show();
+    private TextView photoActionRow(String label, int textColor, int backgroundColor) {
+        TextView row = new TextView(this);
+        row.setText(label);
+        row.setTextColor(textColor);
+        row.setTextSize(14);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setTypeface(FontManager.getPomodoroChineseFont(this));
+        row.setPadding(dp(14), 0, dp(14), 0);
+        row.setMinHeight(0);
+        row.setMinimumHeight(0);
+        row.setBackground(rounded(backgroundColor));
+        return row;
     }
 
     private void createMediaObserver() {
@@ -885,17 +1047,17 @@ public final class PhotoClockActivity extends Activity {
         if (Build.VERSION.SDK_INT < 23) {
             return true;
         }
-        if (Build.VERSION.SDK_INT >= 34) {
-            return checkSelfPermission("android.permission.READ_MEDIA_IMAGES")
-                            == PackageManager.PERMISSION_GRANTED
-                    || checkSelfPermission("android.permission.READ_MEDIA_VISUAL_USER_SELECTED")
-                            == PackageManager.PERMISSION_GRANTED;
-        }
         if (Build.VERSION.SDK_INT >= 33) {
             return checkSelfPermission("android.permission.READ_MEDIA_IMAGES")
                     == PackageManager.PERMISSION_GRANTED;
         }
         return checkSelfPermission(Manifest.permission.READ_EXTERNAL_STORAGE)
+                == PackageManager.PERMISSION_GRANTED;
+    }
+
+    private boolean hasSelectedPhotoAccess() {
+        return Build.VERSION.SDK_INT >= 34
+                && checkSelfPermission("android.permission.READ_MEDIA_VISUAL_USER_SELECTED")
                 == PackageManager.PERMISSION_GRANTED;
     }
 
@@ -922,6 +1084,8 @@ public final class PhotoClockActivity extends Activity {
             if (hasPhotoReadAccess()) {
                 invalidatePhotoCatalog();
                 startPhotoSlideshow();
+            } else if (hasSelectedPhotoAccess() && requiresBroadPhotoPermission()) {
+                showPhotoStatus("已選取部分相片；請到設定用「選擇資料夾」授權整個相簿", WARNING);
             } else if (requiresBroadPhotoPermission()) {
                 showPhotoStatus("需要相簿讀取權限以播放照片", WARNING);
             }
@@ -1411,8 +1575,32 @@ public final class PhotoClockActivity extends Activity {
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 FrameLayout.LayoutParams.MATCH_PARENT));
 
+        gestureHint = new TextView(this);
+        gestureHint.setText("點一下開啟功能　左右滑換照片　長按管理");
+        gestureHint.setTextSize(13);
+        gestureHint.setTextColor(PRIMARY);
+        gestureHint.setGravity(Gravity.CENTER);
+        gestureHint.setPadding(dp(14), dp(8), dp(14), dp(8));
+        gestureHint.setBackground(rounded(Color.argb(178, 10, 16, 22)));
+        gestureHint.setVisibility(View.GONE);
+        FrameLayout.LayoutParams hintParams = new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
+        hintParams.setMargins(dp(14), 0, dp(14), dp(24));
+        rootContainer.addView(gestureHint, hintParams);
+
         updatePhotoClock();
         return rootContainer;
+    }
+
+    private void showGestureHintIfNeeded() {
+        if (gestureHint == null || prefs.getBoolean(GESTURE_HINT_SEEN_KEY, false)) return;
+        PomodoroHelper.Snapshot snapshot = PomodoroHelper.getSnapshot(this);
+        if (snapshot.hasSession) return;
+        prefs.edit().putBoolean(GESTURE_HINT_SEEN_KEY, true).apply();
+        gestureHint.setVisibility(View.VISIBLE);
+        photoHandler.removeCallbacks(hideGestureHintRunnable);
+        photoHandler.postDelayed(hideGestureHintRunnable, 6500L);
     }
 
     private void showPomodoroDialog() {
@@ -1964,16 +2152,14 @@ public final class PhotoClockActivity extends Activity {
         Set<String> selectedFolders = getSelectedPhotoFolders();
         String folderSignature = buildPhotoFolderSignature(selectedFolders);
         if (photoScanInProgress && folderSignature.equals(photoFolderSignature)) {
-            photoHandler.removeCallbacks(photoTicker);
-            photoHandler.postDelayed(photoTicker, 1000);
+            schedulePhotoTicker();
             return;
         }
         if (photoCatalogLoaded && folderSignature.equals(photoFolderSignature)) {
             if (photoBitmap == null && !photoLoading && !photoFiles.isEmpty()) {
                 loadNextPhoto();
             }
-            photoHandler.removeCallbacks(photoTicker);
-            photoHandler.postDelayed(photoTicker, 1000);
+            schedulePhotoTicker();
             return;
         }
         stopPhotoSlideshow();
@@ -1982,7 +2168,47 @@ public final class PhotoClockActivity extends Activity {
             queueStartupPhoto();
         }
         refreshPhotoFiles(selectedFolders, folderSignature);
-        photoHandler.postDelayed(photoTicker, 1000);
+        schedulePhotoTicker();
+    }
+
+    /** Schedules only the next meaningful update instead of waking every second in clock mode. */
+    private void schedulePhotoTicker() {
+        photoHandler.removeCallbacks(photoTicker);
+        if (!activityResumed || isFinishing() || isDestroyed()) return;
+        long nowElapsed = SystemClock.elapsedRealtime();
+        long nowWall = System.currentTimeMillis();
+        long delay = Math.max(200L, 60_000L - (nowWall % 60_000L));
+        PomodoroHelper.Snapshot pomodoro = PomodoroHelper.getSnapshot(this);
+        if (pomodoro.running) {
+            delay = Math.min(delay, Math.max(200L, 1_000L - (nowWall % 1_000L)));
+        }
+        if (!isNightSleepActive && !photoLoading && !photoFiles.isEmpty() && nextPhotoAt > nowElapsed) {
+            delay = Math.min(delay, Math.max(200L, nextPhotoAt - nowElapsed));
+        }
+        photoHandler.postDelayed(photoTicker, delay);
+    }
+
+    private boolean hasTreePhotoSource() {
+        for (String source : getSelectedPhotoFolders()) {
+            if (SettingsActivity.treeUriFromSource(source) != null) return true;
+        }
+        return false;
+    }
+
+    private void scheduleSafCatalogRefresh() {
+        photoHandler.removeCallbacks(safCatalogRefreshRunnable);
+        if (!activityResumed || !hasTreePhotoSource()) return;
+        photoHandler.postDelayed(safCatalogRefreshRunnable,
+                lowPowerMode ? SAF_RESCAN_LOW_POWER_MS : SAF_RESCAN_NORMAL_MS);
+    }
+
+    private int resolvePhotoFileLimit() {
+        boolean lowRam = Runtime.getRuntime().maxMemory() <= 96L * 1024L * 1024L;
+        if (Build.VERSION.SDK_INT >= 19) {
+            ActivityManager manager = (ActivityManager) getSystemService(Context.ACTIVITY_SERVICE);
+            lowRam = lowRam || (manager != null && manager.isLowRamDevice());
+        }
+        return PhotoCatalogPolicy.maxPhotoFiles(lowRam, Runtime.getRuntime().maxMemory());
     }
 
     private Set<String> getSelectedPhotoFolders() {
@@ -2092,6 +2318,7 @@ public final class PhotoClockActivity extends Activity {
                         currentPhotoSource = source;
                         startupPhotoDisplayed = true;
                         nextPhotoAt = SystemClock.elapsedRealtime() + photoIntervalMs;
+                        schedulePhotoTicker();
                         displayPhoto(bitmap);
                     }
                 });
@@ -2101,7 +2328,7 @@ public final class PhotoClockActivity extends Activity {
 
     private void startPhotoPan() {
         stopPhotoPan();
-        if (effectiveDisplayMode() != 0) {
+        if (lowPowerMode || effectiveDisplayMode() != 0) {
             return;
         }
         if (photoImage == null || photoBitmap == null
@@ -2282,6 +2509,7 @@ public final class PhotoClockActivity extends Activity {
         // 暫停時整個倒數畫面就是「繼續」按鈕；運行中仍讓既有觸控行為處理。
         pomodoroFocusPanel.setClickable(!snapshot.running);
         pomodoroRow.setVisibility(View.VISIBLE);
+        if (activityResumed) schedulePhotoTicker();
     }
 
     /** A paused session is intentionally resumed from the focus screen itself. */
@@ -2391,10 +2619,8 @@ public final class PhotoClockActivity extends Activity {
         pomodoroText.setTextSize(targetSp);
         float availableWidth = panelWidth - dp(portrait ? 32 : 112);
         float measuredWidth = pomodoroText.getPaint().measureText("180:00");
-        if (availableWidth > 0 && measuredWidth > availableWidth) {
-            targetSp *= availableWidth / measuredWidth;
-        }
-        pomodoroText.setTextSize(Math.max(portrait ? 72.0f : 84.0f, targetSp));
+        pomodoroText.setTextSize(PomodoroLayout.fitTextSize(
+                targetSp, measuredWidth, availableWidth));
         pomodoroLabel.setTextSize(portrait ? 20.0f : 24.0f);
 
         FrameLayout.LayoutParams params = (FrameLayout.LayoutParams) pomodoroRow.getLayoutParams();
@@ -2697,7 +2923,7 @@ public final class PhotoClockActivity extends Activity {
         Set<String> discoveredPhotos = new LinkedHashSet<String>();
         for (String source : folders) {
             if (scanGeneration != photoGeneration
-                    || discoveredPhotos.size() >= MAX_PHOTO_FILES) break;
+                    || discoveredPhotos.size() >= photoFileLimit) break;
             Uri treeUri = SettingsActivity.treeUriFromSource(source);
             if (treeUri != null && Build.VERSION.SDK_INT >= 21) {
                 collectDocumentTreePhotos(treeUri, visitedDirectories, discoveredPhotos,
@@ -2716,7 +2942,7 @@ public final class PhotoClockActivity extends Activity {
             Set<String> discoveredPhotos, List<PhotoSource> output,
             PhotoDiscovery discovery, int depth, int scanGeneration) {
         if (directory == null || !directory.isDirectory() || depth > MAX_PHOTO_DEPTH
-                || discoveredPhotos.size() >= MAX_PHOTO_FILES
+                || discoveredPhotos.size() >= photoFileLimit
                 || scanGeneration != photoGeneration) {
             return;
         }
@@ -2730,7 +2956,7 @@ public final class PhotoClockActivity extends Activity {
         List<File> childDirectories = new ArrayList<File>();
         for (File entry : entries) {
             if (scanGeneration != photoGeneration
-                    || discoveredPhotos.size() >= MAX_PHOTO_FILES) return;
+                    || discoveredPhotos.size() >= photoFileLimit) return;
             if (entry.isDirectory() && !entry.getName().startsWith(".")) {
                 childDirectories.add(entry);
             } else if (entry.isFile() && isSupportedPhoto(entry.getName())) {
@@ -2744,7 +2970,7 @@ public final class PhotoClockActivity extends Activity {
         }
         for (File child : childDirectories) {
             if (scanGeneration != photoGeneration
-                    || discoveredPhotos.size() >= MAX_PHOTO_FILES) return;
+                    || discoveredPhotos.size() >= photoFileLimit) return;
             collectPhotoFiles(child, visitedDirectories, discoveredPhotos,
                     output, discovery, depth + 1, scanGeneration);
         }
@@ -2755,7 +2981,7 @@ public final class PhotoClockActivity extends Activity {
             Set<String> discoveredPhotos, List<PhotoSource> output,
             PhotoDiscovery discovery, boolean[] inaccessibleTree, int depth,
             int scanGeneration) {
-        if (depth > MAX_PHOTO_DEPTH || discoveredPhotos.size() >= MAX_PHOTO_FILES
+        if (depth > MAX_PHOTO_DEPTH || discoveredPhotos.size() >= photoFileLimit
                 || scanGeneration != photoGeneration) return;
         try {
             String rootId = DocumentsContract.getTreeDocumentId(treeUri);
@@ -2774,7 +3000,7 @@ public final class PhotoClockActivity extends Activity {
             Set<String> visitedDirectories, Set<String> discoveredPhotos,
             List<PhotoSource> output, PhotoDiscovery discovery,
             boolean[] inaccessibleTree, int depth, int scanGeneration) {
-        if (depth > MAX_PHOTO_DEPTH || discoveredPhotos.size() >= MAX_PHOTO_FILES
+        if (depth > MAX_PHOTO_DEPTH || discoveredPhotos.size() >= photoFileLimit
                 || scanGeneration != photoGeneration) return;
         String directoryId;
         try {
@@ -2801,7 +3027,7 @@ public final class PhotoClockActivity extends Activity {
             int typeColumn = cursor.getColumnIndexOrThrow(
                     DocumentsContract.Document.COLUMN_MIME_TYPE);
             List<Uri> childDirectories = new ArrayList<Uri>();
-            while (cursor.moveToNext() && discoveredPhotos.size() < MAX_PHOTO_FILES
+            while (cursor.moveToNext() && discoveredPhotos.size() < photoFileLimit
                     && scanGeneration == photoGeneration) {
                 String childId = cursor.getString(idColumn);
                 String name = cursor.getString(nameColumn);
@@ -2820,7 +3046,7 @@ public final class PhotoClockActivity extends Activity {
             cursor = null;
             for (Uri childDirectory : childDirectories) {
                 if (scanGeneration != photoGeneration
-                        || discoveredPhotos.size() >= MAX_PHOTO_FILES) return;
+                        || discoveredPhotos.size() >= photoFileLimit) return;
                 collectDocumentDirectoryPhotos(treeUri, childDirectory, visitedDirectories,
                         discoveredPhotos, output, discovery, inaccessibleTree,
                         depth + 1, scanGeneration);
@@ -2876,6 +3102,7 @@ public final class PhotoClockActivity extends Activity {
         final int generation = photoGeneration;
         photoLoading = true;
         nextPhotoAt = SystemClock.elapsedRealtime() + photoIntervalMs;
+        schedulePhotoTicker();
         photoDecodeExecutor.execute(new Runnable() {
             @Override
             public void run() {

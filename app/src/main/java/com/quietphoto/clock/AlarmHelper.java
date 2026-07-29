@@ -1,6 +1,7 @@
 package com.quietphoto.clock;
 
 import android.app.AlarmManager;
+import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.content.Context;
 import android.content.Intent;
@@ -27,6 +28,14 @@ public class AlarmHelper {
             return am == null || am.canScheduleExactAlarms();
         }
         return true;
+    }
+
+    /** Android 14+ lets users or stores revoke full-screen alarm notifications. */
+    public static boolean canUseFullScreenIntent(Context context) {
+        if (Build.VERSION.SDK_INT < 34) return true;
+        NotificationManager manager = (NotificationManager)
+                context.getSystemService(Context.NOTIFICATION_SERVICE);
+        return manager == null || manager.canUseFullScreenIntent();
     }
 
     public static void updateAlarmSchedule(Context context) {

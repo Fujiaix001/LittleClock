@@ -7,10 +7,10 @@
 ## 📌 1. 專案基本資訊與位置
 
 - **專案名稱**：小時鐘 (LittleClock)
-- **當前版本**：`v2.2.0-test` / `v2.2.1`
+- **當前版本**：`v4.0.7-test-android4.2-storopia` / `v4.0.7`
 - **專案絕對路徑**：`C:\Users\hsuchungming\Desktop\WorkSpace\LittleClock`
-- **測試包位置**：`C:\Users\hsuchungming\Desktop\WorkSpace\LittleClock\dist\LittleClock-v2.2.0-test-storopia.apk`
-- **標準包位置**：`C:\Users\hsuchungming\Desktop\WorkSpace\LittleClock\dist\LittleClock-v2.2.1.apk`
+- **測試包位置**：`C:\Users\hsuchungming\Desktop\WorkSpace\LittleClock\dist\LittleClock-v4.0.7-test-android4.2-storopia.apk`
+- **標準包位置**：`C:\Users\hsuchungming\Desktop\WorkSpace\LittleClock\dist\LittleClock-v4.0.7.apk`
 - **授權狀態**：Storopia 的分發授權尚未確認；包含此字型的 APK 僅供內部測試。
 
 ---
@@ -18,7 +18,7 @@
 ## 🛠️ 2. 技術架構與設計哲學
 
 1. **核心技術**：原生 Android Java（`compileSdk 36`, `targetSdk 36`, `minSdk 17`）。
-2. **最小依賴**：僅使用 AndroidX ExifInterface 1.3.7；雙版本 release APK 約 **1.08 MB**。
+2. **最小依賴**：僅使用 AndroidX ExifInterface；標準 release APK 約 **5.6 MB**（包含內建精選風景資產）。
 3. **字型資產**：
    - 採用 `FontSubsetting` 技術收錄 11 款開源字型與 Storopia 內部測試字型。
    - **Latin 字型規則**：選擇 Orbitron、Audiowide、Oxanium、Saira Stencil、Zen Dots 或 Storopia 時，日期與星期自動切換為英文格式（例如 `Wed, Jul 22`）。
@@ -58,9 +58,13 @@
 - **啟動優化 (v2.2)**：
   - 優先解碼上次成功顯示的照片，再以背景優先級更新完整相簿索引。
   - 主畫面不再列舉全部系統字型，並移除初始版面的重複字型套用。
+- **跨版本穩定性 (v4.0.6)**：
+  - 開機、App 更新、時區／系統時間變更與精準鬧鐘授權後，重新建立一般鬧鐘；番茄鐘在開機後依儲存的牆上時間恢復。
+  - Android 13+ 在啟用鬧鐘時請求通知權限；Android 14+ 視需要引導全螢幕鬧鐘權限。
+  - 內建數位風景使用版本化安裝，升級會補齊新增圖片。
 - **固定雙版本流程**：
-  - `2.0.0-test` 含 Storopia；`2.0.1` 功能相同且實際移除字型檔。
-  - 後續版本沿用「含 Storopia 的 `-test` 版，再增加 `0.0.1` 建立無 Storopia 版」規則。
+  - Storopia 版本使用獨立套件名稱，能與標準版並存。
+  - 標準版與測試版使用相同人類可讀版本號，但各自由 Gradle 管理內部版本與簽章。
 
 ---
 
@@ -90,5 +94,5 @@ git status
 ## 💬 6. 新對話接續提示 (在新對話直接發送以下文字即可)
 
 ```text
-我們正在維護「小時鐘」(LittleClock) Android 專案，專案路徑為 C:\Users\hsuchungming\Desktop\WorkSpace\LittleClock，當前版本為 v2.2.0-test / v2.2.1，已完成 Git 初始化。請參考該目錄下的 HANDOVER_GUIDE.md 並在開始寫作前先檢查 Git 管理狀態。
+我們正在維護「小時鐘」(LittleClock) Android 專案，專案路徑為 C:\Users\hsuchungming\Desktop\WorkSpace\LittleClock，當前版本為 v4.0.7-test / v4.0.7，已完成 Git 初始化。請參考該目錄下的 HANDOVER_GUIDE.md 並在開始寫作前先檢查 Git 管理狀態。
 ```

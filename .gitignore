@@ -4,4 +4,7 @@ app/build/
 .idea/
 *.iml
 local.properties
+keystore.properties
+keystore/
+dist/
 .DS_Store

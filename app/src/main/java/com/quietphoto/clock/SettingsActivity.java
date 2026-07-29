@@ -2,9 +2,15 @@ package com.quietphoto.clock;
 
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.Manifest;
 import android.content.Intent;
 import android.content.DialogInterface;
 import android.graphics.Color;
+import android.graphics.Canvas;
+import android.graphics.ColorFilter;
+import android.graphics.Paint;
+import android.graphics.PixelFormat;
+import android.graphics.RectF;
 import android.graphics.Typeface;
 import android.graphics.drawable.ClipDrawable;
 import android.graphics.drawable.Drawable;
@@ -103,6 +109,8 @@ public final class SettingsActivity extends Activity {
     private static final int ACTIVE_CHIP = Color.rgb(30, 118, 126);
 
     private final Set<String> selectedFolders = new LinkedHashSet<String>();
+    private final Set<String> initialFolderSources = new LinkedHashSet<String>();
+    private final Set<String> newlyGrantedTreeSources = new LinkedHashSet<String>();
     private int selectedInterval;
     private boolean clockTimeEnabled = true;
     private boolean clockDateEnabled = true;
@@ -131,6 +139,10 @@ public final class SettingsActivity extends Activity {
     private double weatherLatitude = Double.NaN;
     private double weatherLongitude = Double.NaN;
     private boolean weatherLocationChanged;
+    private boolean clearHiddenRequested;
+    private boolean settingsSaved;
+    private boolean pendingGrantsReleased;
+    private boolean awaitingExactAlarmPermission;
 
     private boolean alarmEnabled;
     private int alarmHour = 7;
@@ -191,7 +203,6 @@ public final class SettingsActivity extends Activity {
         super.onCreate(savedInstanceState);
         displayDensity = getResources().getDisplayMetrics().density;
         uiTypeface = FontManager.getPomodoroChineseFont(this);
-        getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         getWindow().setFlags(
                 WindowManager.LayoutParams.FLAG_FULLSCREEN,
                 WindowManager.LayoutParams.FLAG_FULLSCREEN);
@@ -243,7 +254,9 @@ public final class SettingsActivity extends Activity {
         Set<String> saved = prefs.getStringSet(PHOTO_FOLDERS, null);
         if (saved != null && !saved.isEmpty()) {
             for (String source : saved) {
-                selectedFolders.add(normalizeFolderSource(source));
+                String normalized = normalizeFolderSource(source);
+                selectedFolders.add(normalized);
+                initialFolderSources.add(normalized);
             }
         }
 
@@ -253,8 +266,20 @@ public final class SettingsActivity extends Activity {
 
     @Override
     protected void onDestroy() {
+        if (!settingsSaved) discardPendingTreeGrants();
         networkExecutor.shutdownNow();
         super.onDestroy();
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        if (awaitingExactAlarmPermission && AlarmHelper.canScheduleExactAlarms(this)
+                && alarmEnabledCheck != null) {
+            awaitingExactAlarmPermission = false;
+            alarmEnabledCheck.setChecked(true);
+            alarmEnabledCheck.performClick();
+        }
     }
 
 
@@ -271,6 +296,7 @@ public final class SettingsActivity extends Activity {
     @android.annotation.SuppressLint("GestureBackNavigation")
     public void onBackPressed() {
         if (!navigateToParentDirectory()) {
+            discardPendingTreeGrants();
             super.onBackPressed();
         }
     }
@@ -283,6 +309,7 @@ public final class SettingsActivity extends Activity {
                         @Override
                         public void onBackInvoked() {
                             if (!navigateToParentDirectory()) {
+                                discardPendingTreeGrants();
                                 finish();
                             }
                         }
@@ -411,6 +438,7 @@ public final class SettingsActivity extends Activity {
         cancel.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
+                discardPendingTreeGrants();
                 finish();
             }
         });
@@ -471,7 +499,7 @@ public final class SettingsActivity extends Activity {
             @Override public void onStopTrackingTouch(SeekBar seekBar) { }
         });
         mainSection.addView(intervalSeekBar, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, dp(22)));
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(32)));
 
         LinearLayout intervalLabels = new LinearLayout(this);
         intervalLabels.setPadding(0, 0, 0, dp(4));
@@ -642,6 +670,7 @@ public final class SettingsActivity extends Activity {
             public void onClick(View v) {
                 if (alarmEnabledCheck.isChecked() && !AlarmHelper.canScheduleExactAlarms(SettingsActivity.this)) {
                     alarmEnabledCheck.setChecked(false);
+                    awaitingExactAlarmPermission = true;
                     if (Build.VERSION.SDK_INT >= 31) {
                         try {
                             android.content.Intent intent = new android.content.Intent(
@@ -650,6 +679,10 @@ public final class SettingsActivity extends Activity {
                             startActivity(intent);
                         } catch (Exception ignored) { }
                     }
+                }
+                if (alarmEnabledCheck.isChecked()) {
+                    requestAlarmNotificationPermissionIfNeeded();
+                    offerFullScreenAlarmAccessIfNeeded();
                 }
                 alarmOptions.setVisibility(
                         alarmEnabledCheck.isChecked() ? View.VISIBLE : View.GONE);
@@ -769,10 +802,10 @@ public final class SettingsActivity extends Activity {
         clearHidden.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
-                getSharedPreferences(PREFERENCES, MODE_PRIVATE)
-                        .edit().remove(HIDDEN_PHOTOS).apply();
-                Toast.makeText(SettingsActivity.this,
-                        "已清除隱藏清單", Toast.LENGTH_SHORT).show();
+                clearHiddenRequested = !clearHiddenRequested;
+                clearHidden.setText(clearHiddenRequested
+                        ? "已安排重新顯示（套用後生效）"
+                        : "重新顯示已隱藏相片");
             }
         });
         advancedOptions.addView(clearHidden, new LinearLayout.LayoutParams(
@@ -836,8 +869,8 @@ public final class SettingsActivity extends Activity {
         currentFolderCheck.setTextSize(16);
         currentFolderCheck.setTypeface(uiTypeface);
         currentFolderCheck.setPadding(dp(4), dp(3), dp(6), dp(3));
-        currentFolderCheck.setMinHeight(dp(32));
-        currentFolderCheck.setMinimumHeight(dp(32));
+        currentFolderCheck.setMinHeight(dp(36));
+        currentFolderCheck.setMinimumHeight(dp(36));
         tintCheckBox(currentFolderCheck);
         currentFolderCheck.setOnClickListener(new View.OnClickListener() {
             @Override
@@ -1076,8 +1109,8 @@ public final class SettingsActivity extends Activity {
         checkBox.setTypeface(uiTypeface);
         checkBox.setChecked(checked);
         checkBox.setPadding(dp(4), dp(3), dp(6), dp(3));
-        checkBox.setMinHeight(dp(32));
-        checkBox.setMinimumHeight(dp(32));
+        checkBox.setMinHeight(dp(36));
+        checkBox.setMinimumHeight(dp(36));
         tintCheckBox(checkBox);
         return checkBox;
     }
@@ -1215,13 +1248,80 @@ public final class SettingsActivity extends Activity {
         } catch (SecurityException ignored) {
             persistent = false;
         }
-        selectedFolders.add(TREE_SOURCE_PREFIX + treeUri.toString());
+        String source = TREE_SOURCE_PREFIX + treeUri.toString();
+        if (persistent && !initialFolderSources.contains(source)) {
+            newlyGrantedTreeSources.add(source);
+        }
+        selectedFolders.add(source);
         Toast.makeText(this,
                 persistent
                         ? "已加入相簿資料夾，請按「套用」儲存"
                         : "已加入資料夾；此裝置重新開啟後可能需要再次選取",
                 Toast.LENGTH_LONG).show();
         showDirectory();
+    }
+
+    private void requestAlarmNotificationPermissionIfNeeded() {
+        if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)
+                != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(new String[] { Manifest.permission.POST_NOTIFICATIONS }, 4201);
+        }
+    }
+
+    private void offerFullScreenAlarmAccessIfNeeded() {
+        if (Build.VERSION.SDK_INT < 34 || AlarmHelper.canUseFullScreenIntent(this)) return;
+        new AlertDialog.Builder(this)
+                .setTitle("允許全螢幕鬧鐘")
+                .setMessage("這台裝置目前不允許完整鬧鐘畫面。開啟後，鎖定時仍可直接顯示關閉與貪睡。")
+                .setNegativeButton("稍後", null)
+                .setPositiveButton("前往設定", new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface dialog, int which) {
+                        try {
+                            Intent intent = new Intent(
+                                    android.provider.Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT);
+                            intent.setData(Uri.parse("package:" + getPackageName()));
+                            startActivity(intent);
+                        } catch (Exception ignored) {
+                            Toast.makeText(SettingsActivity.this,
+                                    "請到系統通知設定允許全螢幕鬧鐘", Toast.LENGTH_LONG).show();
+                        }
+                    }
+                }).show();
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode == 4201 && (grantResults.length == 0
+                || grantResults[0] != android.content.pm.PackageManager.PERMISSION_GRANTED)) {
+            Toast.makeText(this, "未允許通知時，鬧鐘仍會震動，但提醒不會顯示在通知列", Toast.LENGTH_LONG).show();
+        }
+    }
+
+    private void discardPendingTreeGrants() {
+        if (pendingGrantsReleased || Build.VERSION.SDK_INT < 21) return;
+        pendingGrantsReleased = true;
+        for (String source : newlyGrantedTreeSources) {
+            releaseTreePermission(treeUriFromSource(source));
+        }
+        newlyGrantedTreeSources.clear();
+    }
+
+    @android.annotation.TargetApi(21)
+    private void releaseTreePermission(Uri uri) {
+        if (uri == null) return;
+        try {
+            getContentResolver().releasePersistableUriPermission(uri,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+        } catch (SecurityException ignored) {
+            try {
+                getContentResolver().releasePersistableUriPermission(uri,
+                        Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            } catch (SecurityException ignoredAgain) {
+                // The provider may not offer a persistent permission; there is nothing to release.
+            }
+        }
     }
 
     private void showDirectory() {
@@ -1503,6 +1603,9 @@ public final class SettingsActivity extends Activity {
                 .putInt(PomodoroHelper.PREF_SHORT_BREAK_MINUTES, pomodoroShortBreakMinutes)
                 .putInt(PomodoroHelper.PREF_LONG_BREAK_MINUTES, pomodoroLongBreakMinutes)
                 .putStringSet(PHOTO_FOLDERS, new HashSet<String>(selectedFolders));
+        if (clearHiddenRequested) {
+            editor.remove(HIDDEN_PHOTOS);
+        }
         if (weatherLocationChanged) {
             editor.remove(WEATHER_TEMPERATURE)
                     .remove(WEATHER_CODE)
@@ -1510,6 +1613,20 @@ public final class SettingsActivity extends Activity {
                     .remove(WEATHER_UPDATED_AT);
         }
         editor.apply();
+        if (Build.VERSION.SDK_INT >= 21) {
+            for (String source : initialFolderSources) {
+                if (!selectedFolders.contains(source)) {
+                    releaseTreePermission(treeUriFromSource(source));
+                }
+            }
+            for (String source : newlyGrantedTreeSources) {
+                if (!selectedFolders.contains(source)) {
+                    releaseTreePermission(treeUriFromSource(source));
+                }
+            }
+        }
+        newlyGrantedTreeSources.clear();
+        settingsSaved = true;
         AlarmHelper.updateAlarmSchedule(this);
         finish();
     }
@@ -1725,18 +1842,49 @@ public final class SettingsActivity extends Activity {
     private void tintCheckBox(CheckBox checkBox) {
         StateListDrawable states = new StateListDrawable();
         states.addState(new int[] { android.R.attr.state_checked },
-                checkboxBox(ACCENT, ACCENT));
-        states.addState(new int[] {}, checkboxBox(Color.TRANSPARENT, SECONDARY));
+                new CheckboxMarkDrawable(true));
+        states.addState(new int[] {}, new CheckboxMarkDrawable(false));
         checkBox.setButtonDrawable(states);
     }
 
-    private Drawable checkboxBox(int fillColor, int strokeColor) {
-        GradientDrawable box = new GradientDrawable();
-        box.setColor(fillColor);
-        box.setCornerRadius(dp(2));
-        box.setStroke(dp(1), strokeColor);
-        box.setSize(dp(14), dp(14));
-        return box;
+    private final class CheckboxMarkDrawable extends Drawable {
+        private final boolean checked;
+        private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+
+        CheckboxMarkDrawable(boolean checked) {
+            this.checked = checked;
+        }
+
+        @Override public void draw(Canvas canvas) {
+            RectF bounds = new RectF(getBounds());
+            paint.setStyle(Paint.Style.FILL);
+            paint.setColor(checked ? ACCENT : Color.TRANSPARENT);
+            canvas.drawRoundRect(bounds, dp(2), dp(2), paint);
+            paint.setStyle(Paint.Style.STROKE);
+            paint.setStrokeWidth(dp(1));
+            paint.setColor(checked ? ACCENT : SECONDARY);
+            canvas.drawRoundRect(bounds, dp(2), dp(2), paint);
+            if (checked) {
+                paint.setColor(BACKGROUND);
+                paint.setStrokeWidth(dp(1));
+                paint.setStrokeCap(Paint.Cap.ROUND);
+                float left = bounds.left;
+                float top = bounds.top;
+                float width = bounds.width();
+                float height = bounds.height();
+                canvas.drawLine(left + width * 0.22f, top + height * 0.53f,
+                        left + width * 0.43f, top + height * 0.74f, paint);
+                canvas.drawLine(left + width * 0.43f, top + height * 0.74f,
+                        left + width * 0.80f, top + height * 0.28f, paint);
+                paint.setStrokeCap(Paint.Cap.BUTT);
+            }
+        }
+
+        @Override public int getIntrinsicWidth() { return dp(14); }
+        @Override public int getIntrinsicHeight() { return dp(14); }
+        @Override public void setAlpha(int alpha) { paint.setAlpha(alpha); }
+        @Override public void setColorFilter(ColorFilter colorFilter) { paint.setColorFilter(colorFilter); }
+        @Override public int getOpacity() { return PixelFormat.TRANSLUCENT; }
     }
 
     private void applyUiFont(View view) {
