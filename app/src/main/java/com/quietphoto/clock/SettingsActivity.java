@@ -2,17 +2,25 @@ package com.quietphoto.clock;
 
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.content.Intent;
 import android.content.DialogInterface;
+import android.graphics.Canvas;
 import android.graphics.Color;
+import android.graphics.Paint;
 import android.graphics.Typeface;
+import android.graphics.drawable.ClipDrawable;
+import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
+import android.graphics.drawable.LayerDrawable;
 import android.content.res.ColorStateList;
 import android.content.Context;
 import android.hardware.Sensor;
 import android.hardware.SensorManager;
+import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
+import android.provider.DocumentsContract;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
@@ -25,6 +33,7 @@ import android.widget.CheckBox;
 import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
+import android.widget.SeekBar;
 import android.widget.Spinner;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -74,15 +83,17 @@ public final class SettingsActivity extends Activity {
     public static final String WEATHER_CODE = "weather_code";
     public static final String WEATHER_IS_DAY = "weather_is_day";
     public static final String WEATHER_UPDATED_AT = "weather_updated_at";
+    public static final String FILE_SOURCE_PREFIX = "file:";
+    public static final String TREE_SOURCE_PREFIX = "tree:";
 
     // 3 大進階視覺特效 Key
     public static final String ADAPTIVE_COLOR_ENABLED = "adaptive_color_enabled";
     public static final String POLAROID_FRAME_ENABLED = "polaroid_frame_enabled";
     public static final String SMART_FOCUS_ENABLED = "smart_focus_enabled";
 
-    public static final int DEFAULT_INTERVAL_SECONDS = 45;
-    private static final int MIN_INTERVAL = 5;
-    private static final int MAX_INTERVAL = 600;
+    public static final int DEFAULT_INTERVAL_SECONDS = 40;
+    private static final int REQUEST_PICK_PHOTO_TREE = 4101;
+    private static final int[] INTERVAL_STEPS = { 15, 30, 40, 60, 120 };
 
     private static final int BACKGROUND = Color.rgb(9, 13, 18);
     private static final int PANEL = Color.rgb(19, 26, 35);
@@ -136,6 +147,7 @@ public final class SettingsActivity extends Activity {
     private TextView pathText;
     private TextView selectionText;
     private TextView intervalDisplay;
+    private SeekBar intervalSeekBar;
     private CheckBox nightModeCheck;
     private CheckBox clockTimeCheck;
     private CheckBox clockDateCheck;
@@ -190,7 +202,8 @@ public final class SettingsActivity extends Activity {
         currentDirectory = null;
 
         android.content.SharedPreferences prefs = getSharedPreferences(PREFERENCES, MODE_PRIVATE);
-        selectedInterval = prefs.getInt(PHOTO_INTERVAL_SECONDS, DEFAULT_INTERVAL_SECONDS);
+        selectedInterval = nearestIntervalStep(
+                prefs.getInt(PHOTO_INTERVAL_SECONDS, DEFAULT_INTERVAL_SECONDS));
         clockTimeEnabled = prefs.getBoolean(CLOCK_TIME_ENABLED, true);
         clockDateEnabled = prefs.getBoolean(CLOCK_DATE_ENABLED, true);
         clockBgEnabled = prefs.getBoolean(CLOCK_BACKGROUND_ENABLED, false);
@@ -231,7 +244,9 @@ public final class SettingsActivity extends Activity {
 
         Set<String> saved = prefs.getStringSet(PHOTO_FOLDERS, null);
         if (saved != null && !saved.isEmpty()) {
-            selectedFolders.addAll(new HashSet<String>(saved));
+            for (String source : saved) {
+                selectedFolders.add(normalizeFolderSource(source));
+            }
         }
 
         setContentView(buildInterface());
@@ -438,46 +453,36 @@ public final class SettingsActivity extends Activity {
                 LinearLayout.LayoutParams.WRAP_CONTENT, dp(32)));
         mainSection.addView(intervalHeader);
 
-        LinearLayout presetsRow = new LinearLayout(this);
-        presetsRow.setGravity(Gravity.CENTER_VERTICAL);
-        presetsRow.setPadding(0, dp(4), 0, dp(6));
-
-        final int[] presets = { 15, 30, 45, 60, 120 };
-        for (final int seconds : presets) {
-            Button chip = button(seconds + "秒", PANEL);
-            chip.setTextSize(14);
-            chip.setOnClickListener(new View.OnClickListener() {
-                @Override
-                public void onClick(View view) {
-                    setInterval(seconds);
-                }
-            });
-            LinearLayout.LayoutParams chipParams = new LinearLayout.LayoutParams(
-                    0, dp(38), 1);
-            chipParams.setMargins(0, 0, dp(6), 0);
-            presetsRow.addView(chip, chipParams);
+        intervalSeekBar = new IntervalSeekBar(this);
+        intervalSeekBar.setMax(INTERVAL_STEPS.length - 1);
+        intervalSeekBar.setProgress(intervalStepIndex(selectedInterval));
+        intervalSeekBar.setPadding(dp(8), dp(4), dp(8), 0);
+        intervalSeekBar.setProgressDrawable(intervalTrackDrawable());
+        intervalSeekBar.setThumb(intervalThumbDrawable());
+        if (Build.VERSION.SDK_INT >= 21) {
+            intervalSeekBar.setSplitTrack(false);
         }
-
-        Button minus = button("－", Color.rgb(45, 55, 70));
-        minus.setOnClickListener(new View.OnClickListener() {
+        intervalSeekBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             @Override
-            public void onClick(View view) {
-                setInterval(selectedInterval - 5);
+            public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
+                setInterval(INTERVAL_STEPS[Math.max(0,
+                        Math.min(INTERVAL_STEPS.length - 1, progress))]);
             }
-        });
-        Button plus = button("＋", Color.rgb(45, 55, 70));
-        plus.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View view) {
-                setInterval(selectedInterval + 5);
-            }
-        });
 
-        presetsRow.addView(minus, new LinearLayout.LayoutParams(dp(36), dp(32)));
-        LinearLayout.LayoutParams plusParams = new LinearLayout.LayoutParams(dp(36), dp(32));
-        plusParams.setMargins(dp(4), 0, 0, 0);
-        presetsRow.addView(plus, plusParams);
-        mainSection.addView(presetsRow);
+            @Override public void onStartTrackingTouch(SeekBar seekBar) { }
+            @Override public void onStopTrackingTouch(SeekBar seekBar) { }
+        });
+        mainSection.addView(intervalSeekBar, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(34)));
+
+        LinearLayout intervalLabels = new LinearLayout(this);
+        intervalLabels.setPadding(0, 0, 0, dp(6));
+        for (int seconds : INTERVAL_STEPS) {
+            TextView label = text(Integer.toString(seconds), 12, SECONDARY);
+            label.setGravity(Gravity.CENTER);
+            intervalLabels.addView(label, new LinearLayout.LayoutParams(0, dp(22), 1));
+        }
+        mainSection.addView(intervalLabels);
 
         transitionSpinner = addSpinner(
                 mainSection,
@@ -809,16 +814,21 @@ public final class SettingsActivity extends Activity {
 
         LinearLayout pathRow = new LinearLayout(this);
         pathRow.setGravity(Gravity.CENTER_VERTICAL);
-        Button up = button("上一層", PANEL);
+        Button up = button(Build.VERSION.SDK_INT >= 21 ? "選擇資料夾" : "上一層", PANEL);
         up.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
-                onBackPressed();
+                if (Build.VERSION.SDK_INT >= 21) {
+                    choosePhotoTree();
+                } else {
+                    onBackPressed();
+                }
             }
         });
         pathText = text("", 15, SECONDARY);
         pathText.setPadding(dp(14), 0, 0, 0);
-        pathRow.addView(up, new LinearLayout.LayoutParams(dp(100), dp(40)));
+        pathRow.addView(up, new LinearLayout.LayoutParams(
+                Build.VERSION.SDK_INT >= 21 ? dp(132) : dp(100), dp(40)));
         pathRow.addView(pathText, new LinearLayout.LayoutParams(0, dp(40), 1));
         root.addView(pathRow);
 
@@ -835,7 +845,8 @@ public final class SettingsActivity extends Activity {
             @Override
             public void onClick(View view) {
                 if (currentDirectory != null) {
-                    boolean isChecked = selectedFolders.contains(currentDirectory.getAbsolutePath());
+                    boolean isChecked = selectedFolders.contains(
+                            FILE_SOURCE_PREFIX + currentDirectory.getAbsolutePath());
                     boolean hasChildSelected = isAnyChildSelected(currentDirectory);
                     if (!isChecked && hasChildSelected) {
                         setSelected(currentDirectory, true);
@@ -847,6 +858,9 @@ public final class SettingsActivity extends Activity {
         });
         root.addView(currentFolderCheck, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, dp(44)));
+        if (Build.VERSION.SDK_INT >= 21) {
+            currentFolderCheck.setVisibility(View.GONE);
+        }
 
         folderList = new LinearLayout(this);
         folderList.setOrientation(LinearLayout.VERTICAL);
@@ -1076,17 +1090,170 @@ public final class SettingsActivity extends Activity {
     }
 
     private void setInterval(int value) {
-        selectedInterval = Math.max(MIN_INTERVAL, Math.min(MAX_INTERVAL, value));
+        selectedInterval = nearestIntervalStep(value);
         updateIntervalDisplay();
+    }
+
+    private int nearestIntervalStep(int value) {
+        int best = INTERVAL_STEPS[0];
+        int bestDistance = Math.abs(value - best);
+        for (int step : INTERVAL_STEPS) {
+            int distance = Math.abs(value - step);
+            if (distance < bestDistance) {
+                best = step;
+                bestDistance = distance;
+            }
+        }
+        return best;
+    }
+
+    private int intervalStepIndex(int value) {
+        int normalized = nearestIntervalStep(value);
+        for (int i = 0; i < INTERVAL_STEPS.length; i++) {
+            if (INTERVAL_STEPS[i] == normalized) return i;
+        }
+        return 0;
+    }
+
+    private Drawable intervalTrackDrawable() {
+        GradientDrawable background = new GradientDrawable();
+        background.setColor(STROKE);
+        background.setCornerRadius(dp(1));
+        background.setSize(1, dp(2));
+
+        GradientDrawable progress = new GradientDrawable();
+        progress.setColor(ACCENT);
+        progress.setCornerRadius(dp(1));
+        progress.setSize(1, dp(2));
+
+        LayerDrawable layers = new LayerDrawable(new Drawable[] {
+                background,
+                new ClipDrawable(progress, Gravity.START, ClipDrawable.HORIZONTAL)
+        });
+        layers.setId(0, android.R.id.background);
+        layers.setId(1, android.R.id.progress);
+        return layers;
+    }
+
+    private Drawable intervalThumbDrawable() {
+        GradientDrawable thumb = new GradientDrawable();
+        thumb.setShape(GradientDrawable.OVAL);
+        thumb.setColor(ACCENT);
+        thumb.setStroke(dp(2), PANEL);
+        thumb.setSize(dp(18), dp(18));
+        return thumb;
     }
 
     private void updateIntervalDisplay() {
         if (intervalDisplay != null) {
             intervalDisplay.setText(String.format(Locale.TAIWAN, "%d 秒", selectedInterval));
         }
+        if (intervalSeekBar != null
+                && intervalSeekBar.getProgress() != intervalStepIndex(selectedInterval)) {
+            intervalSeekBar.setProgress(intervalStepIndex(selectedInterval));
+        }
+    }
+
+    private final class IntervalSeekBar extends SeekBar {
+        private final Paint nodePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+
+        IntervalSeekBar(Context context) {
+            super(context);
+            nodePaint.setColor(ACCENT);
+        }
+
+        @Override
+        protected synchronized void onDraw(Canvas canvas) {
+            super.onDraw(canvas);
+            float usableWidth = getWidth() - getPaddingLeft() - getPaddingRight();
+            float centerY = getHeight() / 2.0f;
+            for (int i = 0; i < INTERVAL_STEPS.length; i++) {
+                float x = getPaddingLeft()
+                        + usableWidth * i / (INTERVAL_STEPS.length - 1.0f);
+                canvas.drawCircle(x, centerY, dp(2), nodePaint);
+            }
+        }
+    }
+
+    static String normalizeFolderSource(String source) {
+        if (source == null || source.length() == 0) return "";
+        if (source.startsWith(FILE_SOURCE_PREFIX) || source.startsWith(TREE_SOURCE_PREFIX)) {
+            return source;
+        }
+        if (source.startsWith("content://")) {
+            return TREE_SOURCE_PREFIX + source;
+        }
+        return FILE_SOURCE_PREFIX + new File(source).getAbsolutePath();
+    }
+
+    static String filePathFromSource(String source) {
+        if (source == null) return null;
+        if (source.startsWith(FILE_SOURCE_PREFIX)) {
+            return source.substring(FILE_SOURCE_PREFIX.length());
+        }
+        if (!source.startsWith(TREE_SOURCE_PREFIX) && !source.startsWith("content://")) {
+            return source;
+        }
+        return null;
+    }
+
+    static Uri treeUriFromSource(String source) {
+        if (source == null) return null;
+        if (source.startsWith(TREE_SOURCE_PREFIX)) {
+            return Uri.parse(source.substring(TREE_SOURCE_PREFIX.length()));
+        }
+        return source.startsWith("content://") ? Uri.parse(source) : null;
+    }
+
+    private void choosePhotoTree() {
+        if (Build.VERSION.SDK_INT < 21) {
+            Toast.makeText(this, "此系統請使用下方資料夾清單", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
+        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION
+                | Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION
+                | Intent.FLAG_GRANT_PREFIX_URI_PERMISSION);
+        try {
+            startActivityForResult(intent, REQUEST_PICK_PHOTO_TREE);
+        } catch (Exception error) {
+            Toast.makeText(this, "這台裝置沒有可用的系統檔案選擇器", Toast.LENGTH_LONG).show();
+        }
+    }
+
+    @Override
+    @android.annotation.TargetApi(21)
+    @android.annotation.SuppressLint("WrongConstant")
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode != REQUEST_PICK_PHOTO_TREE || resultCode != RESULT_OK
+                || data == null || data.getData() == null) {
+            return;
+        }
+        Uri treeUri = data.getData();
+        int flags = data.getFlags() & (Intent.FLAG_GRANT_READ_URI_PERMISSION
+                | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+        boolean persistent = true;
+        try {
+            getContentResolver().takePersistableUriPermission(treeUri, flags);
+        } catch (SecurityException ignored) {
+            persistent = false;
+        }
+        selectedFolders.add(TREE_SOURCE_PREFIX + treeUri.toString());
+        Toast.makeText(this,
+                persistent
+                        ? "已加入相簿資料夾，請按「套用」儲存"
+                        : "已加入資料夾；此裝置重新開啟後可能需要再次選取",
+                Toast.LENGTH_LONG).show();
+        showDirectory();
     }
 
     private void showDirectory() {
+        if (Build.VERSION.SDK_INT >= 21) {
+            showModernFolderSources();
+            return;
+        }
         folderList.removeAllViews();
 
         if (currentDirectory == null) {
@@ -1129,7 +1296,8 @@ public final class SettingsActivity extends Activity {
 
         currentFolderCheck.setVisibility(View.VISIBLE);
         pathText.setText(currentDirectory.getAbsolutePath());
-        boolean isChecked = selectedFolders.contains(currentDirectory.getAbsolutePath());
+        boolean isChecked = selectedFolders.contains(
+                FILE_SOURCE_PREFIX + currentDirectory.getAbsolutePath());
         boolean hasChildSelected = isAnyChildSelected(currentDirectory);
         currentFolderCheck.setChecked(isChecked || hasChildSelected);
         currentFolderCheck.setAlpha(isChecked ? 1.0f : (hasChildSelected ? 0.5f : 1.0f));
@@ -1190,7 +1358,8 @@ public final class SettingsActivity extends Activity {
         final CheckBox check = new CheckBox(this);
         check.setTypeface(uiTypeface);
         tintCheckBox(check);
-        final boolean isChecked = selectedFolders.contains(volume.rootDir.getAbsolutePath());
+        final boolean isChecked = selectedFolders.contains(
+                FILE_SOURCE_PREFIX + volume.rootDir.getAbsolutePath());
         final boolean hasChildSelected = isAnyChildSelected(volume.rootDir);
         check.setChecked(isChecked || hasChildSelected);
         check.setAlpha(isChecked ? 1.0f : (hasChildSelected ? 0.5f : 1.0f));
@@ -1230,7 +1399,8 @@ public final class SettingsActivity extends Activity {
         final CheckBox check = new CheckBox(this);
         check.setTypeface(uiTypeface);
         tintCheckBox(check);
-        final boolean isChecked = selectedFolders.contains(directory.getAbsolutePath());
+        final boolean isChecked = selectedFolders.contains(
+                FILE_SOURCE_PREFIX + directory.getAbsolutePath());
         final boolean hasChildSelected = isAnyChildSelected(directory);
         check.setChecked(isChecked || hasChildSelected);
         check.setAlpha(isChecked ? 1.0f : (hasChildSelected ? 0.5f : 1.0f));
@@ -1266,7 +1436,8 @@ public final class SettingsActivity extends Activity {
         if (directory == null) return false;
         String prefix = directory.getAbsolutePath() + File.separator;
         for (String selected : selectedFolders) {
-            if (selected.startsWith(prefix)) {
+            String selectedPath = filePathFromSource(selected);
+            if (selectedPath != null && selectedPath.startsWith(prefix)) {
                 return true;
             }
         }
@@ -1275,22 +1446,25 @@ public final class SettingsActivity extends Activity {
 
     private void setSelected(File directory, boolean selected) {
         String path = directory.getAbsolutePath();
+        String source = FILE_SOURCE_PREFIX + path;
         if (selected) {
-            selectedFolders.add(path);
+            selectedFolders.add(source);
         } else {
-            selectedFolders.remove(path);
+            selectedFolders.remove(source);
         }
         
         java.util.Iterator<String> it = selectedFolders.iterator();
         String prefix = path + File.separator;
         while (it.hasNext()) {
-            if (it.next().startsWith(prefix)) {
+            String selectedPath = filePathFromSource(it.next());
+            if (selectedPath != null && selectedPath.startsWith(prefix)) {
                 it.remove();
             }
         }
         
         if (currentDirectory != null) {
-            boolean isChecked = selectedFolders.contains(currentDirectory.getAbsolutePath());
+            boolean isChecked = selectedFolders.contains(
+                    FILE_SOURCE_PREFIX + currentDirectory.getAbsolutePath());
             boolean hasChildSelected = isAnyChildSelected(currentDirectory);
             currentFolderCheck.setChecked(isChecked || hasChildSelected);
             currentFolderCheck.setAlpha(isChecked ? 1.0f : (hasChildSelected ? 0.5f : 1.0f));
@@ -1301,7 +1475,7 @@ public final class SettingsActivity extends Activity {
 
     private void updateSelectionSummary() {
         if (selectedFolders.isEmpty()) {
-            selectionText.setText("所有可存取相片");
+            selectionText.setText("尚未選擇相簿");
         } else {
             selectionText.setText(String.format(
                     Locale.TAIWAN, "已選 %d 個相簿", selectedFolders.size()));
@@ -1370,6 +1544,78 @@ public final class SettingsActivity extends Activity {
             alarmTimeDisplay.setText(String.format(
                     Locale.US, "響鈴時間：%02d:%02d", alarmHour, alarmMinute));
         }
+    }
+
+    private void showModernFolderSources() {
+        currentDirectory = null;
+        currentFolderCheck.setVisibility(View.GONE);
+        pathText.setText("支援內部儲存空間與 SD 卡");
+        folderList.removeAllViews();
+        if (selectedFolders.isEmpty()) {
+            TextView empty = text("尚未選擇相簿，請使用上方系統選擇器", 15, SECONDARY);
+            empty.setGravity(Gravity.CENTER);
+            empty.setPadding(dp(12), dp(16), dp(12), dp(16));
+            folderList.addView(empty, new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT));
+        } else {
+            for (final String source : new ArrayList<String>(selectedFolders)) {
+                folderList.addView(modernFolderRow(source));
+            }
+        }
+        updateSelectionSummary();
+    }
+
+    private View modernFolderRow(final String source) {
+        LinearLayout row = new LinearLayout(this);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(dp(12), dp(7), dp(8), dp(7));
+
+        LinearLayout labels = new LinearLayout(this);
+        labels.setOrientation(LinearLayout.VERTICAL);
+        TextView name = text(folderSourceName(source), 16, PRIMARY);
+        String filePath = filePathFromSource(source);
+        boolean appInternal = filePath != null
+                && (filePath.equals(getFilesDir().getAbsolutePath())
+                        || filePath.startsWith(getFilesDir().getAbsolutePath() + File.separator));
+        TextView kind = text(treeUriFromSource(source) != null
+                ? "系統授權資料夾"
+                : (appInternal ? "APP 內建相簿" : "舊版路徑（建議重新選取）"),
+                12, SECONDARY);
+        labels.addView(name);
+        labels.addView(kind);
+        row.addView(labels, new LinearLayout.LayoutParams(0,
+                LinearLayout.LayoutParams.WRAP_CONTENT, 1));
+
+        Button remove = button("移除", PANEL);
+        remove.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                selectedFolders.remove(source);
+                showModernFolderSources();
+            }
+        });
+        row.addView(remove, new LinearLayout.LayoutParams(dp(72), dp(36)));
+        return row;
+    }
+
+    @android.annotation.TargetApi(21)
+    private String folderSourceName(String source) {
+        String filePath = filePathFromSource(source);
+        if (filePath != null) {
+            File file = new File(filePath);
+            return file.getName().length() == 0 ? filePath : file.getName();
+        }
+        Uri uri = treeUriFromSource(source);
+        if (uri == null) return "相簿資料夾";
+        try {
+            String documentId = DocumentsContract.getTreeDocumentId(uri);
+            int colon = documentId.lastIndexOf(':');
+            String name = colon >= 0 ? documentId.substring(colon + 1) : documentId;
+            if (name.length() > 0) return Uri.decode(name);
+        } catch (Exception ignored) {
+        }
+        return "系統相簿資料夾";
     }
 
     private void addPomodoroDurationRow(LinearLayout parent, String label, final int type) {

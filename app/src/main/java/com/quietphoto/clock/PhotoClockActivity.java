@@ -4,7 +4,6 @@ import android.Manifest;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.Context;
-import android.content.ContentUris;
 import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.SharedPreferences;
@@ -31,6 +30,7 @@ import android.os.Handler;
 import android.os.SystemClock;
 import android.os.VibrationEffect;
 import android.os.Vibrator;
+import android.provider.DocumentsContract;
 import android.provider.MediaStore;
 import android.view.Gravity;
 import android.view.GestureDetector;
@@ -50,9 +50,11 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.InputStream;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Date;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
@@ -82,7 +84,8 @@ public final class PhotoClockActivity extends Activity {
     public static final String CLOCK_SCALE_FACTOR = "clock_scale_factor";
     private static final String LAST_PHOTO_KEY = "last_photo_key";
     private static final String PHOTO_DIRECTORY = "QuietPanel/Photos";
-    private static final int MAX_PHOTO_FILES = 10000;
+    private static final int MAX_PHOTO_FILES = 50000;
+    private static final int MAX_PHOTO_DEPTH = 12;
     private static final long IMMERSIVE_TIMEOUT_MS = 5000L;
     private static final long BURN_IN_INTERVAL_MS = 180000L;
     private static final long MEDIA_REFRESH_DELAY_MS = 2000L;
@@ -130,7 +133,8 @@ public final class PhotoClockActivity extends Activity {
     private final List<PhotoSource> photoFiles = new ArrayList<PhotoSource>();
     private final PlaybackNavigator playbackNavigator = new PlaybackNavigator();
     private final Handler photoHandler = new Handler();
-    private final ExecutorService photoExecutor = Executors.newSingleThreadExecutor();
+    private final ExecutorService photoScanExecutor = Executors.newSingleThreadExecutor();
+    private final ExecutorService photoDecodeExecutor = Executors.newSingleThreadExecutor();
     private final ExecutorService weatherExecutor = Executors.newSingleThreadExecutor();
     private final Matrix photoMatrix = new Matrix();
     private final Date nowDate = new Date();
@@ -151,8 +155,11 @@ public final class PhotoClockActivity extends Activity {
             new SimpleDateFormat("EEE, MMM d", Locale.US);
 
     private int photoFailures;
-    private int photoGeneration;
+    private volatile int photoGeneration;
     private boolean photoLoading;
+    private boolean photoScanInProgress;
+    private boolean photoCatalogLoaded;
+    private String photoFolderSignature = "";
     private boolean photoPanReverse = true;
     private boolean activityResumed;
     private boolean firstSlideshowStart = true;
@@ -229,17 +236,31 @@ public final class PhotoClockActivity extends Activity {
     private boolean mediaObserverRegistered;
 
     private static final class PhotoSource {
-        final String path;
+        final File file;
         final Uri uri;
+        final String identity;
 
-        PhotoSource(String path, Uri uri) {
-            this.path = path;
+        private PhotoSource(File file, Uri uri, String identity) {
+            this.file = file;
             this.uri = uri;
+            this.identity = identity;
+        }
+
+        static PhotoSource fromFile(File file, String identity) {
+            return new PhotoSource(file, null, identity);
+        }
+
+        static PhotoSource fromUri(Uri uri) {
+            return new PhotoSource(null, uri, uri.toString());
         }
 
         String key() {
-            return path != null ? path : uri.toString();
+            return identity;
         }
+    }
+
+    private interface PhotoDiscovery {
+        void onPhotoDiscovered(PhotoSource source);
     }
 
     private static final class AccessibleLinearLayout extends LinearLayout {
@@ -319,7 +340,8 @@ public final class PhotoClockActivity extends Activity {
         @Override
         public void run() {
             if (isFinishing() || isDestroyed()) return;
-            if (activityResumed && hasPhotoReadAccess()) {
+            if (activityResumed) {
+                invalidatePhotoCatalog();
                 startPhotoSlideshow();
             }
         }
@@ -496,7 +518,8 @@ public final class PhotoClockActivity extends Activity {
         unregisterMediaObserver();
         unregisterLightSensor();
         stopPhotoSlideshow();
-        photoExecutor.shutdownNow();
+        photoScanExecutor.shutdownNow();
+        photoDecodeExecutor.shutdownNow();
         weatherExecutor.shutdownNow();
         super.onDestroy();
     }
@@ -830,7 +853,8 @@ public final class PhotoClockActivity extends Activity {
     }
 
     private void checkAndRequestStoragePermission() {
-        if (Build.VERSION.SDK_INT < 23 || hasPhotoReadAccess()) {
+        if (Build.VERSION.SDK_INT < 23 || !requiresBroadPhotoPermission()
+                || hasPhotoReadAccess()) {
             return;
         }
         if (Build.VERSION.SDK_INT >= 34) {
@@ -865,13 +889,30 @@ public final class PhotoClockActivity extends Activity {
                 == PackageManager.PERMISSION_GRANTED;
     }
 
+    private boolean requiresBroadPhotoPermission() {
+        Set<String> configured = prefs.getStringSet(SettingsActivity.PHOTO_FOLDERS, null);
+        if (configured == null || configured.isEmpty()) {
+            return false;
+        }
+        String appFiles = getFilesDir().getAbsolutePath();
+        for (String source : configured) {
+            String path = SettingsActivity.filePathFromSource(source);
+            if (path != null && !path.equals(appFiles)
+                    && !path.startsWith(appFiles + File.separator)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     @Override
     public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
         if (requestCode == PERMISSION_REQUEST_CODE) {
             if (hasPhotoReadAccess()) {
+                invalidatePhotoCatalog();
                 startPhotoSlideshow();
-            } else {
+            } else if (requiresBroadPhotoPermission()) {
                 showPhotoStatus("需要相簿讀取權限以播放照片", WARNING);
             }
         }
@@ -1893,14 +1934,66 @@ public final class PhotoClockActivity extends Activity {
     }
 
     private void startPhotoSlideshow() {
-        stopPhotoSlideshow();
         updatePhotoClock();
+        Set<String> selectedFolders = getSelectedPhotoFolders();
+        String folderSignature = buildPhotoFolderSignature(selectedFolders);
+        if (photoScanInProgress && folderSignature.equals(photoFolderSignature)) {
+            photoHandler.removeCallbacks(photoTicker);
+            photoHandler.postDelayed(photoTicker, 1000);
+            return;
+        }
+        if (photoCatalogLoaded && folderSignature.equals(photoFolderSignature)) {
+            if (photoBitmap == null && !photoLoading && !photoFiles.isEmpty()) {
+                loadNextPhoto();
+            }
+            photoHandler.removeCallbacks(photoTicker);
+            photoHandler.postDelayed(photoTicker, 1000);
+            return;
+        }
+        stopPhotoSlideshow();
         if (firstSlideshowStart) {
             firstSlideshowStart = false;
             queueStartupPhoto();
         }
-        refreshPhotoFiles();
+        refreshPhotoFiles(selectedFolders, folderSignature);
         photoHandler.postDelayed(photoTicker, 1000);
+    }
+
+    private Set<String> getSelectedPhotoFolders() {
+        Set<String> saved = prefs.getStringSet(SettingsActivity.PHOTO_FOLDERS, null);
+        if (saved == null) return new HashSet<String>();
+        Set<String> normalized = new HashSet<String>();
+        for (String source : saved) {
+            String value = SettingsActivity.normalizeFolderSource(source);
+            if (value.length() > 0) normalized.add(value);
+        }
+        return normalized;
+    }
+
+    private String buildPhotoFolderSignature(Set<String> folders) {
+        List<String> ordered = new ArrayList<String>(folders);
+        Collections.sort(ordered);
+        StringBuilder signature = new StringBuilder();
+        if (ordered.isEmpty()) signature.append("@default");
+        for (String source : ordered) {
+            if (signature.length() > 0) signature.append('\n');
+            signature.append(source);
+        }
+        signature.append("\n@favoritesOnly=").append(favoritesOnly);
+        List<String> hidden = new ArrayList<String>(hiddenPhotos);
+        Collections.sort(hidden);
+        for (String key : hidden) signature.append("\n@hidden=").append(key);
+        if (favoritesOnly) {
+            List<String> favorites = new ArrayList<String>(favoritePhotos);
+            Collections.sort(favorites);
+            for (String key : favorites) signature.append("\n@favorite=").append(key);
+        }
+        return signature.toString();
+    }
+
+    private void invalidatePhotoCatalog() {
+        photoCatalogLoaded = false;
+        photoFolderSignature = "";
     }
 
     private void stopPhotoSlideshow() {
@@ -1908,6 +2001,7 @@ public final class PhotoClockActivity extends Activity {
         stopPhotoPan();
         photoGeneration++;
         photoLoading = false;
+        photoScanInProgress = false;
         if (photoImage != null) {
             photoImage.animate().cancel();
             photoImage.setImageDrawable(null);
@@ -1925,7 +2019,6 @@ public final class PhotoClockActivity extends Activity {
         pendingPhotoBitmap = null;
         currentPhotoSource = null;
         startupPhotoDisplayed = false;
-        playbackNavigator.reset(0);
     }
 
     private void queueStartupPhoto() {
@@ -1937,18 +2030,19 @@ public final class PhotoClockActivity extends Activity {
 
         final PhotoSource source;
         if (key.startsWith("content://")) {
-            source = new PhotoSource(null, Uri.parse(key));
+            source = PhotoSource.fromUri(Uri.parse(key));
         } else {
             File file = new File(key);
             if (!file.isFile()) {
                 prefs.edit().remove(LAST_PHOTO_KEY).apply();
                 return;
             }
-            source = new PhotoSource(key, null);
+            source = PhotoSource.fromFile(file, canonicalPath(file));
         }
 
         final int generation = photoGeneration;
-        photoExecutor.execute(new Runnable() {
+        photoLoading = true;
+        photoDecodeExecutor.execute(new Runnable() {
             @Override
             public void run() {
                 android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_BACKGROUND);
@@ -1960,8 +2054,13 @@ public final class PhotoClockActivity extends Activity {
                             safeRecycle(bitmap);
                             return;
                         }
-                        if (generation != photoGeneration || !activityResumed || bitmap == null) {
+                        if (generation != photoGeneration || !activityResumed) {
                             safeRecycle(bitmap);
+                            return;
+                        }
+                        photoLoading = false;
+                        if (bitmap == null) {
+                            if (!photoFiles.isEmpty()) loadNextPhoto();
                             return;
                         }
                         currentPhotoSource = source;
@@ -2416,46 +2515,53 @@ public final class PhotoClockActivity extends Activity {
         }
     }
 
-    private void refreshPhotoFiles() {
+    private void refreshPhotoFiles(
+            final Set<String> selectedFolders, final String folderSignature) {
         photoFiles.clear();
+        playbackNavigator.reset(0);
         photoFailures = 0;
-        photoLoading = true;
-        showPhotoStatus("正在尋找相片…", SECONDARY);
+        photoCatalogLoaded = false;
+        photoScanInProgress = true;
+        photoFolderSignature = folderSignature;
+        if (!photoLoading) {
+            showPhotoStatus("正在讀取相簿…", SECONDARY);
+        }
 
         final int generation = photoGeneration;
-        Set<String> configuredFolders = prefs.getStringSet(SettingsActivity.PHOTO_FOLDERS, null);
-        final Set<String> selectedFolders = configuredFolders == null
-                ? new HashSet<String>()
-                : new HashSet<String>(configuredFolders);
         final Set<String> favoriteSnapshot = new HashSet<String>(favoritePhotos);
         final Set<String> hiddenSnapshot = new HashSet<String>(hiddenPhotos);
         final boolean favoritesOnlySnapshot = favoritesOnly;
 
-        photoExecutor.execute(new Runnable() {
+        photoScanExecutor.execute(new Runnable() {
             @Override
             public void run() {
                 android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_BACKGROUND);
-                List<PhotoSource> found = new ArrayList<PhotoSource>();
-                if (Build.VERSION.SDK_INT >= 29) {
-                    Set<String> externalFolders = new HashSet<String>();
-                    Set<String> internalFolders = new HashSet<String>();
-                    String internalPath = getFilesDir().getAbsolutePath();
-                    for (String folder : selectedFolders) {
-                        if (folder.startsWith(internalPath)) {
-                            internalFolders.add(folder);
-                        } else {
-                            externalFolders.add(folder);
+                final List<PhotoSource> found = new ArrayList<PhotoSource>();
+                final boolean[] firstPublished = new boolean[] { false };
+                final boolean[] inaccessibleTree = new boolean[] { false };
+                collectSelectedPhotoFiles(selectedFolders, found, new PhotoDiscovery() {
+                    @Override
+                    public void onPhotoDiscovered(final PhotoSource source) {
+                        if (firstPublished[0]
+                                || !isPhotoEligible(source, favoriteSnapshot,
+                                        hiddenSnapshot, favoritesOnlySnapshot)) {
+                            return;
                         }
+                        firstPublished[0] = true;
+                        runOnUiThread(new Runnable() {
+                            @Override
+                            public void run() {
+                                if (generation != photoGeneration || !activityResumed
+                                        || !photoFiles.isEmpty()) {
+                                    return;
+                                }
+                                photoFiles.add(source);
+                                playbackNavigator.reset(photoFiles.size());
+                                if (!photoLoading) loadNextPhoto();
+                            }
+                        });
                     }
-                    if (!externalFolders.isEmpty()) {
-                        found.addAll(queryMediaStore(externalFolders));
-                    }
-                    if (!internalFolders.isEmpty()) {
-                        found.addAll(scanLegacyFolders(internalFolders));
-                    }
-                } else {
-                    found.addAll(scanLegacyFolders(selectedFolders));
-                }
+                }, inaccessibleTree, generation);
                 final List<PhotoSource> discovered = filterPhotos(
                         found, favoriteSnapshot, hiddenSnapshot, favoritesOnlySnapshot);
 
@@ -2465,24 +2571,26 @@ public final class PhotoClockActivity extends Activity {
                         if (generation != photoGeneration || !activityResumed) {
                             return;
                         }
+                        photoScanInProgress = false;
+                        photoCatalogLoaded = true;
                         photoFiles.clear();
                         photoFiles.addAll(discovered);
                         int startupIndex = findPhotoIndex(currentPhotoSource);
-                        if (startupPhotoDisplayed && startupIndex >= 0) {
+                        if (startupIndex >= 0) {
                             playbackNavigator.resetAt(photoFiles.size(), startupIndex);
                         } else {
                             playbackNavigator.reset(photoFiles.size());
                         }
                         photoFailures = 0;
-                        photoLoading = false;
 
                         if (photoFiles.isEmpty()) {
                             showPhotoStatus(
-                                    "沒有可播放的相片\n請到設定選擇相簿或調整相片權限",
-                                    SECONDARY);
-                        } else if (!startupPhotoDisplayed || startupIndex < 0) {
-                            showPhotoStatus(
-                                    "正在載入 " + photoFiles.size() + " 張相片…", SECONDARY);
+                                    inaccessibleTree[0]
+                                            ? "SD 卡資料夾權限已失效\n請到設定重新選取"
+                                            : "沒有可播放的相片\n請到設定選擇相簿資料夾",
+                                    inaccessibleTree[0] ? WARNING : SECONDARY);
+                        } else if ((!startupPhotoDisplayed || startupIndex < 0)
+                                && photoBitmap == null && !photoLoading) {
                             loadNextPhoto();
                         } else {
                             photoStatus.setVisibility(View.GONE);
@@ -2509,117 +2617,183 @@ public final class PhotoClockActivity extends Activity {
             boolean onlyFavorites) {
         List<PhotoSource> filtered = new ArrayList<PhotoSource>();
         for (PhotoSource source : photos) {
-            String key = source.key();
-            if (hidden.contains(key)) {
-                continue;
-            }
-            if (onlyFavorites && !favorites.contains(key)) {
-                continue;
-            }
-            filtered.add(source);
+            if (isPhotoEligible(source, favorites, hidden, onlyFavorites)) filtered.add(source);
         }
         return filtered;
     }
 
-    private List<PhotoSource> queryMediaStore(Set<String> selectedFolders) {
-        List<PhotoSource> photos = new ArrayList<PhotoSource>();
-        Uri collection = MediaStore.Images.Media.EXTERNAL_CONTENT_URI;
-        String[] projection = {
-                MediaStore.Images.Media._ID,
-                MediaStore.Images.Media.DATA
-        };
-        Cursor cursor = null;
-        try {
-            cursor = getContentResolver().query(
-                    collection,
-                    projection,
-                    null,
-                    null,
-                    MediaStore.Images.Media.DATE_MODIFIED + " DESC");
-            if (cursor == null) {
-                return photos;
-            }
-            int idColumn = cursor.getColumnIndexOrThrow(MediaStore.Images.Media._ID);
-            int pathColumn = cursor.getColumnIndex(MediaStore.Images.Media.DATA);
-            while (cursor.moveToNext() && photos.size() < MAX_PHOTO_FILES) {
-                long id = cursor.getLong(idColumn);
-                String path = pathColumn >= 0 ? cursor.getString(pathColumn) : null;
-                if (!selectedFolders.isEmpty() && !isInSelectedFolder(path, selectedFolders)) {
-                    continue;
-                }
-                photos.add(new PhotoSource(path, ContentUris.withAppendedId(collection, id)));
-            }
-        } catch (SecurityException ignored) {
-            // Permission can be revoked while the app is scanning.
-        } finally {
-            if (cursor != null) {
-                cursor.close();
-            }
-        }
-        return photos;
+    private boolean isPhotoEligible(PhotoSource source, Set<String> favorites,
+            Set<String> hidden, boolean onlyFavorites) {
+        String key = source.key();
+        return !hidden.contains(key) && (!onlyFavorites || favorites.contains(key));
     }
 
-    private boolean isInSelectedFolder(String photoPath, Set<String> selectedFolders) {
-        if (photoPath == null) {
-            return false;
-        }
-        String normalizedPhoto = new File(photoPath).getAbsolutePath();
-        for (String folder : selectedFolders) {
-            String normalizedFolder = new File(folder).getAbsolutePath();
-            if (normalizedPhoto.equals(normalizedFolder)
-                    || normalizedPhoto.startsWith(normalizedFolder + File.separator)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private List<PhotoSource> scanLegacyFolders(Set<String> selectedFolders) {
+    private void collectSelectedPhotoFiles(Set<String> selectedFolders,
+            List<PhotoSource> output, PhotoDiscovery discovery, boolean[] inaccessibleTree,
+            int scanGeneration) {
         Set<String> folders = new HashSet<String>(selectedFolders);
         if (folders.isEmpty()) {
-            File defaultDirectory = new File(
-                    Environment.getExternalStorageDirectory(), PHOTO_DIRECTORY);
-            if (!defaultDirectory.exists()) {
-                defaultDirectory.mkdirs();
+            if (Build.VERSION.SDK_INT >= 21) {
+                File bundledDirectory = new File(getFilesDir(), "數位風景");
+                if (bundledDirectory.isDirectory()) {
+                    folders.add(SettingsActivity.FILE_SOURCE_PREFIX
+                            + bundledDirectory.getAbsolutePath());
+                }
+            } else {
+                File defaultDirectory = new File(
+                        Environment.getExternalStorageDirectory(), PHOTO_DIRECTORY);
+                if (!defaultDirectory.exists()) defaultDirectory.mkdirs();
+                folders.add(SettingsActivity.FILE_SOURCE_PREFIX
+                        + defaultDirectory.getAbsolutePath());
             }
-            folders.add(defaultDirectory.getAbsolutePath());
         }
 
-        Set<String> discoveredPaths = new LinkedHashSet<String>();
-        for (String path : folders) {
-            collectPhotoFiles(new File(path), discoveredPaths, 0);
-            if (discoveredPaths.size() >= MAX_PHOTO_FILES) {
-                break;
+        Set<String> visitedDirectories = new HashSet<String>();
+        Set<String> discoveredPhotos = new LinkedHashSet<String>();
+        for (String source : folders) {
+            if (scanGeneration != photoGeneration
+                    || discoveredPhotos.size() >= MAX_PHOTO_FILES) break;
+            Uri treeUri = SettingsActivity.treeUriFromSource(source);
+            if (treeUri != null && Build.VERSION.SDK_INT >= 21) {
+                collectDocumentTreePhotos(treeUri, visitedDirectories, discoveredPhotos,
+                        output, discovery, inaccessibleTree, 0, scanGeneration);
+            } else {
+                String path = SettingsActivity.filePathFromSource(source);
+                if (path != null) {
+                    collectPhotoFiles(new File(path), visitedDirectories, discoveredPhotos,
+                            output, discovery, 0, scanGeneration);
+                }
             }
         }
-
-        List<PhotoSource> photos = new ArrayList<PhotoSource>();
-        for (String path : discoveredPaths) {
-            photos.add(new PhotoSource(path, null));
-        }
-        return photos;
     }
 
-    private void collectPhotoFiles(File directory, Set<String> discoveredPhotos, int depth) {
-        if (directory == null || !directory.isDirectory() || depth > 12 || discoveredPhotos.size() >= MAX_PHOTO_FILES) {
+    private void collectPhotoFiles(File directory, Set<String> visitedDirectories,
+            Set<String> discoveredPhotos, List<PhotoSource> output,
+            PhotoDiscovery discovery, int depth, int scanGeneration) {
+        if (directory == null || !directory.isDirectory() || depth > MAX_PHOTO_DEPTH
+                || discoveredPhotos.size() >= MAX_PHOTO_FILES
+                || scanGeneration != photoGeneration) {
             return;
         }
-        if (new File(directory, ".nomedia").exists()) {
+        String directoryPath = canonicalPath(directory);
+        if (!visitedDirectories.add("file|" + directoryPath)
+                || new File(directory, ".nomedia").exists()) {
             return;
         }
         File[] entries = directory.listFiles();
-        if (entries == null) {
+        if (entries == null) return;
+        List<File> childDirectories = new ArrayList<File>();
+        for (File entry : entries) {
+            if (scanGeneration != photoGeneration
+                    || discoveredPhotos.size() >= MAX_PHOTO_FILES) return;
+            if (entry.isDirectory() && !entry.getName().startsWith(".")) {
+                childDirectories.add(entry);
+            } else if (entry.isFile() && isSupportedPhoto(entry.getName())) {
+                String identity = canonicalPath(entry);
+                if (discoveredPhotos.add(identity)) {
+                    PhotoSource source = PhotoSource.fromFile(entry, identity);
+                    output.add(source);
+                    discovery.onPhotoDiscovered(source);
+                }
+            }
+        }
+        for (File child : childDirectories) {
+            if (scanGeneration != photoGeneration
+                    || discoveredPhotos.size() >= MAX_PHOTO_FILES) return;
+            collectPhotoFiles(child, visitedDirectories, discoveredPhotos,
+                    output, discovery, depth + 1, scanGeneration);
+        }
+    }
+
+    @android.annotation.TargetApi(21)
+    private void collectDocumentTreePhotos(Uri treeUri, Set<String> visitedDirectories,
+            Set<String> discoveredPhotos, List<PhotoSource> output,
+            PhotoDiscovery discovery, boolean[] inaccessibleTree, int depth,
+            int scanGeneration) {
+        if (depth > MAX_PHOTO_DEPTH || discoveredPhotos.size() >= MAX_PHOTO_FILES
+                || scanGeneration != photoGeneration) return;
+        try {
+            String rootId = DocumentsContract.getTreeDocumentId(treeUri);
+            Uri root = DocumentsContract.buildDocumentUriUsingTree(treeUri, rootId);
+            collectDocumentDirectoryPhotos(treeUri, root, visitedDirectories, discoveredPhotos,
+                    output, discovery, inaccessibleTree, depth, scanGeneration);
+        } catch (SecurityException error) {
+            inaccessibleTree[0] = true;
+        } catch (Exception ignored) {
+            // A removed card or malformed provider must not stop other folders.
+        }
+    }
+
+    @android.annotation.TargetApi(21)
+    private void collectDocumentDirectoryPhotos(Uri treeUri, Uri directoryUri,
+            Set<String> visitedDirectories, Set<String> discoveredPhotos,
+            List<PhotoSource> output, PhotoDiscovery discovery,
+            boolean[] inaccessibleTree, int depth, int scanGeneration) {
+        if (depth > MAX_PHOTO_DEPTH || discoveredPhotos.size() >= MAX_PHOTO_FILES
+                || scanGeneration != photoGeneration) return;
+        String directoryId;
+        try {
+            directoryId = DocumentsContract.getDocumentId(directoryUri);
+        } catch (Exception ignored) {
             return;
         }
-        for (File entry : entries) {
-            if (discoveredPhotos.size() >= MAX_PHOTO_FILES) {
-                return;
+        if (!visitedDirectories.add("tree|" + treeUri + "|" + directoryId)) return;
+
+        Cursor cursor = null;
+        try {
+            Uri children = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, directoryId);
+            String[] projection = {
+                    DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+                    DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+                    DocumentsContract.Document.COLUMN_MIME_TYPE
+            };
+            cursor = getContentResolver().query(children, projection, null, null, null);
+            if (cursor == null) return;
+            int idColumn = cursor.getColumnIndexOrThrow(
+                    DocumentsContract.Document.COLUMN_DOCUMENT_ID);
+            int nameColumn = cursor.getColumnIndexOrThrow(
+                    DocumentsContract.Document.COLUMN_DISPLAY_NAME);
+            int typeColumn = cursor.getColumnIndexOrThrow(
+                    DocumentsContract.Document.COLUMN_MIME_TYPE);
+            List<Uri> childDirectories = new ArrayList<Uri>();
+            while (cursor.moveToNext() && discoveredPhotos.size() < MAX_PHOTO_FILES
+                    && scanGeneration == photoGeneration) {
+                String childId = cursor.getString(idColumn);
+                String name = cursor.getString(nameColumn);
+                String mimeType = cursor.getString(typeColumn);
+                Uri child = DocumentsContract.buildDocumentUriUsingTree(treeUri, childId);
+                if (DocumentsContract.Document.MIME_TYPE_DIR.equals(mimeType)) {
+                    childDirectories.add(child);
+                } else if (name != null && isSupportedPhoto(name)
+                        && discoveredPhotos.add(child.toString())) {
+                    PhotoSource source = PhotoSource.fromUri(child);
+                    output.add(source);
+                    discovery.onPhotoDiscovered(source);
+                }
             }
-            if (entry.isDirectory() && !entry.getName().startsWith(".")) {
-                collectPhotoFiles(entry, discoveredPhotos, depth + 1);
-            } else if (entry.isFile() && isSupportedPhoto(entry.getName())) {
-                discoveredPhotos.add(entry.getAbsolutePath());
+            cursor.close();
+            cursor = null;
+            for (Uri childDirectory : childDirectories) {
+                if (scanGeneration != photoGeneration
+                        || discoveredPhotos.size() >= MAX_PHOTO_FILES) return;
+                collectDocumentDirectoryPhotos(treeUri, childDirectory, visitedDirectories,
+                        discoveredPhotos, output, discovery, inaccessibleTree,
+                        depth + 1, scanGeneration);
             }
+        } catch (SecurityException error) {
+            inaccessibleTree[0] = true;
+        } catch (Exception ignored) {
+            // Continue with other selected sources.
+        } finally {
+            if (cursor != null) cursor.close();
+        }
+    }
+
+    private String canonicalPath(File file) {
+        try {
+            return file.getCanonicalPath();
+        } catch (Exception ignored) {
+            return file.getAbsolutePath();
         }
     }
 
@@ -2657,7 +2831,7 @@ public final class PhotoClockActivity extends Activity {
         final int generation = photoGeneration;
         photoLoading = true;
         nextPhotoAt = SystemClock.elapsedRealtime() + photoIntervalMs;
-        photoExecutor.execute(new Runnable() {
+        photoDecodeExecutor.execute(new Runnable() {
             @Override
             public void run() {
                 final Bitmap bitmap = decodePhoto(source);
@@ -2777,14 +2951,17 @@ public final class PhotoClockActivity extends Activity {
 
         BitmapFactory.Options options = new BitmapFactory.Options();
         options.inSampleSize = sample;
-        options.inPreferredConfig = Bitmap.Config.RGB_565;
-        options.inDither = true;
+        options.inPreferredConfig = lowPowerMode
+                ? Bitmap.Config.RGB_565 : Bitmap.Config.ARGB_8888;
+        options.inDither = lowPowerMode;
         Bitmap bmp = null;
         try {
             bmp = decodeBitmap(source, options);
         } catch (OutOfMemoryError ignored) {
             // 降低解析度後重試。
             options.inSampleSize = sample * 2;
+            options.inPreferredConfig = Bitmap.Config.RGB_565;
+            options.inDither = true;
             try {
                 bmp = decodeBitmap(source, options);
             } catch (OutOfMemoryError ignoredAgain) {
@@ -2812,19 +2989,20 @@ public final class PhotoClockActivity extends Activity {
     }
 
     private Bitmap decodeBitmap(PhotoSource source, BitmapFactory.Options options) {
-        if (source.uri == null) {
-            return source.path == null ? null : BitmapFactory.decodeFile(source.path, options);
-        }
-
         InputStream input = null;
         try {
-            input = getContentResolver().openInputStream(source.uri);
+            input = openPhotoInputStream(source);
             return input == null ? null : BitmapFactory.decodeStream(input, null, options);
         } catch (Exception ignored) {
             return null;
         } finally {
             closeQuietly(input);
         }
+    }
+
+    private InputStream openPhotoInputStream(PhotoSource source) throws Exception {
+        if (source.file != null) return new FileInputStream(source.file);
+        return source.uri == null ? null : getContentResolver().openInputStream(source.uri);
     }
 
     private int readRotationAngle(PhotoSource source) {
@@ -2837,8 +3015,9 @@ public final class PhotoClockActivity extends Activity {
                     return 0;
                 }
                 exif = new androidx.exifinterface.media.ExifInterface(input);
-            } else if (source.path != null) {
-                exif = new androidx.exifinterface.media.ExifInterface(source.path);
+            } else if (source.file != null) {
+                exif = new androidx.exifinterface.media.ExifInterface(
+                        source.file.getAbsolutePath());
             } else {
                 return 0;
             }

@@ -2,9 +2,9 @@ plugins {
     id("com.android.application")
 }
 
-val versionMajor = 3
+val versionMajor = 4
 val versionMinor = 0
-val basePatch = 13
+val basePatch = 0
 
 android {
     namespace = "com.quietphoto.clock"
@@ -28,9 +28,8 @@ android {
         }
         create("standard") {
             dimension = "fontBundle"
-            val standardPatch = basePatch + 1
-            versionCode = (versionMajor * 100) + (versionMinor * 10) + standardPatch
-            versionName = "$versionMajor.$versionMinor.$standardPatch"
+            versionCode = (versionMajor * 100) + (versionMinor * 10) + basePatch
+            versionName = "$versionMajor.$versionMinor.$basePatch"
             buildConfigField("boolean", "INCLUDE_STOROPIA", "false")
         }
     }
