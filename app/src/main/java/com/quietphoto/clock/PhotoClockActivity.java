@@ -1428,7 +1428,7 @@ public final class PhotoClockActivity extends Activity {
         addPomodoroPhaseButton(phases, "短休息", PomodoroHelper.PHASE_SHORT_BREAK);
         addPomodoroPhaseButton(phases, "長休息", PomodoroHelper.PHASE_LONG_BREAK);
         content.addView(phases, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, dp(44)));
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(38)));
 
         Button customDuration = button("自訂時間", PANEL_RAISED);
         customDuration.setOnClickListener(new View.OnClickListener() {
@@ -1438,8 +1438,8 @@ public final class PhotoClockActivity extends Activity {
             }
         });
         LinearLayout.LayoutParams customDurationParams = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, dp(40));
-        customDurationParams.setMargins(0, dp(4), 0, 0);
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(34));
+        customDurationParams.setMargins(0, dp(3), 0, 0);
         content.addView(customDuration, customDurationParams);
 
         pomodoroStartPauseButton = button("開始", ACTIVE_COLOR);
@@ -1481,17 +1481,17 @@ public final class PhotoClockActivity extends Activity {
             }
         });
         content.addView(pomodoroStartPauseButton, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, dp(42)));
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(36)));
         LinearLayout secondaryControls = new LinearLayout(this);
         secondaryControls.setGravity(Gravity.CENTER);
-        LinearLayout.LayoutParams skipParams = new LinearLayout.LayoutParams(0, dp(42), 2);
-        skipParams.setMargins(0, dp(6), dp(4), 0);
+        LinearLayout.LayoutParams skipParams = new LinearLayout.LayoutParams(0, dp(36), 2);
+        skipParams.setMargins(0, dp(4), dp(4), 0);
         secondaryControls.addView(skip, skipParams);
-        LinearLayout.LayoutParams endParams = new LinearLayout.LayoutParams(0, dp(42), 1);
-        endParams.setMargins(dp(4), dp(6), 0, 0);
+        LinearLayout.LayoutParams endParams = new LinearLayout.LayoutParams(0, dp(36), 1);
+        endParams.setMargins(dp(4), dp(4), 0, 0);
         secondaryControls.addView(end, endParams);
         content.addView(secondaryControls, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, dp(50)));
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(42)));
 
         ScrollView dialogScroll = new ScrollView(this);
         dialogScroll.setFillViewport(true);
@@ -1516,7 +1516,10 @@ public final class PhotoClockActivity extends Activity {
         pomodoroDialog.show();
         styleModernDialog(pomodoroDialog);
         Button returnToPomodoro = pomodoroDialog.getButton(AlertDialog.BUTTON_NEGATIVE);
-        if (returnToPomodoro != null) returnToPomodoro.setTextColor(ACTIVE_COLOR);
+        if (returnToPomodoro != null) {
+            returnToPomodoro.setTextColor(ACTIVE_COLOR);
+            compactPomodoroDialogButton(returnToPomodoro);
+        }
         refreshPomodoroDialog();
         photoHandler.removeCallbacks(pomodoroDialogTicker);
         photoHandler.postDelayed(pomodoroDialogTicker, 1000L);
@@ -1589,9 +1592,20 @@ public final class PhotoClockActivity extends Activity {
                 refreshPomodoroDialog();
             }
         });
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, dp(36), 1);
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, dp(30), 1);
         params.setMargins(dp(2), 0, dp(2), 0);
         parent.addView(button, params);
+    }
+
+    private void compactPomodoroDialogButton(Button button) {
+        button.setMinHeight(0);
+        button.setMinimumHeight(0);
+        button.setPadding(dp(10), 0, dp(10), 0);
+        ViewGroup.LayoutParams params = button.getLayoutParams();
+        if (params != null) {
+            params.height = dp(36);
+            button.setLayoutParams(params);
+        }
     }
 
     private void refreshPomodoroDialog() {
