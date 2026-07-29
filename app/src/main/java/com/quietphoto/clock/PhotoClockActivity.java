@@ -664,10 +664,10 @@ public final class PhotoClockActivity extends Activity {
         if (focusReminderOverlay == null) return;
         if (focusReminderImage != null && focusReminderMessage != null) {
             if (random.nextBoolean()) {
-                focusReminderImage.setImageResource(R.drawable.focus_reminder_ang);
+                focusReminderImage.setImageResource(focusReminderDrawable(true));
                 focusReminderMessage.setText("專心一點！");
             } else {
-                focusReminderImage.setImageResource(R.drawable.focus_reminder_cry);
+                focusReminderImage.setImageResource(focusReminderDrawable(false));
                 focusReminderMessage.setText("怎麼這麼不專心？");
             }
         }
@@ -675,6 +675,16 @@ public final class PhotoClockActivity extends Activity {
         focusReminderOverlay.setVisibility(View.VISIBLE);
         vibrateFocusReminder();
         photoHandler.postDelayed(hideFocusReminderRunnable, FOCUS_REMINDER_DURATION_MS);
+    }
+
+    private int focusReminderDrawable(boolean angry) {
+        boolean portrait = getResources().getConfiguration().orientation
+                == Configuration.ORIENTATION_PORTRAIT;
+        if (portrait) {
+            return angry ? R.drawable.focus_reminder_ang_portrait
+                    : R.drawable.focus_reminder_cry_portrait;
+        }
+        return angry ? R.drawable.focus_reminder_ang : R.drawable.focus_reminder_cry;
     }
 
     @SuppressWarnings("deprecation")
@@ -1377,7 +1387,7 @@ public final class PhotoClockActivity extends Activity {
         focusReminderOverlay.setClickable(true);
         focusReminderOverlay.setVisibility(View.GONE);
         focusReminderImage = new ImageView(this);
-        focusReminderImage.setImageResource(R.drawable.focus_reminder_ang);
+        focusReminderImage.setImageResource(focusReminderDrawable(true));
         focusReminderImage.setScaleType(ImageView.ScaleType.CENTER_CROP);
         focusReminderImage.setContentDescription("專注提醒圖片");
         focusReminderOverlay.addView(focusReminderImage, new FrameLayout.LayoutParams(
