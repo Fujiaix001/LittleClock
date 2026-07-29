@@ -1493,6 +1493,18 @@ public final class PhotoClockActivity extends Activity {
         content.addView(secondaryControls, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, dp(42)));
 
+        Button leaveSettings = button("離開設定", ACTIVE_COLOR);
+        leaveSettings.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                if (pomodoroDialog != null) pomodoroDialog.dismiss();
+            }
+        });
+        LinearLayout.LayoutParams leaveSettingsParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(32));
+        leaveSettingsParams.setMargins(0, dp(2), 0, 0);
+        content.addView(leaveSettings, leaveSettingsParams);
+
         ScrollView dialogScroll = new ScrollView(this);
         dialogScroll.setFillViewport(true);
         dialogScroll.addView(content, new ScrollView.LayoutParams(
@@ -1502,7 +1514,6 @@ public final class PhotoClockActivity extends Activity {
         pomodoroDialog = new AlertDialog.Builder(this)
                 .setTitle("番茄鐘")
                 .setView(dialogScroll)
-                .setNegativeButton("回到番茄鐘", null)
                 .create();
         pomodoroDialog.setOnDismissListener(new DialogInterface.OnDismissListener() {
             @Override
@@ -1515,11 +1526,6 @@ public final class PhotoClockActivity extends Activity {
         });
         pomodoroDialog.show();
         styleModernDialog(pomodoroDialog);
-        Button returnToPomodoro = pomodoroDialog.getButton(AlertDialog.BUTTON_NEGATIVE);
-        if (returnToPomodoro != null) {
-            returnToPomodoro.setTextColor(ACTIVE_COLOR);
-            compactPomodoroDialogButton(returnToPomodoro);
-        }
         refreshPomodoroDialog();
         photoHandler.removeCallbacks(pomodoroDialogTicker);
         photoHandler.postDelayed(pomodoroDialogTicker, 1000L);
@@ -1595,17 +1601,6 @@ public final class PhotoClockActivity extends Activity {
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, dp(30), 1);
         params.setMargins(dp(2), 0, dp(2), 0);
         parent.addView(button, params);
-    }
-
-    private void compactPomodoroDialogButton(Button button) {
-        button.setMinHeight(0);
-        button.setMinimumHeight(0);
-        button.setPadding(dp(10), 0, dp(10), 0);
-        ViewGroup.LayoutParams params = button.getLayoutParams();
-        if (params != null) {
-            params.height = dp(36);
-            button.setLayoutParams(params);
-        }
     }
 
     private void refreshPomodoroDialog() {
