@@ -4,15 +4,13 @@ import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.Intent;
 import android.content.DialogInterface;
-import android.graphics.Canvas;
 import android.graphics.Color;
-import android.graphics.Paint;
 import android.graphics.Typeface;
 import android.graphics.drawable.ClipDrawable;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
 import android.graphics.drawable.LayerDrawable;
-import android.content.res.ColorStateList;
+import android.graphics.drawable.StateListDrawable;
 import android.content.Context;
 import android.hardware.Sensor;
 import android.hardware.SensorManager;
@@ -327,7 +325,7 @@ public final class SettingsActivity extends Activity {
 
         File internalAssets = new File(getFilesDir(), "數位風景");
         if (internalAssets.exists()) {
-            volumes.add(new StorageVolumeItem("🖼️ 內建精選數位風景", internalAssets));
+            volumes.add(new StorageVolumeItem("內建精選數位風景", internalAssets));
             addedPaths.add(internalAssets.getAbsolutePath());
         }
 
@@ -453,10 +451,10 @@ public final class SettingsActivity extends Activity {
                 LinearLayout.LayoutParams.WRAP_CONTENT, dp(32)));
         mainSection.addView(intervalHeader);
 
-        intervalSeekBar = new IntervalSeekBar(this);
+        intervalSeekBar = new SeekBar(this);
         intervalSeekBar.setMax(INTERVAL_STEPS.length - 1);
         intervalSeekBar.setProgress(intervalStepIndex(selectedInterval));
-        intervalSeekBar.setPadding(dp(8), dp(4), dp(8), 0);
+        intervalSeekBar.setPadding(dp(8), 0, dp(8), 0);
         intervalSeekBar.setProgressDrawable(intervalTrackDrawable());
         intervalSeekBar.setThumb(intervalThumbDrawable());
         if (Build.VERSION.SDK_INT >= 21) {
@@ -473,14 +471,14 @@ public final class SettingsActivity extends Activity {
             @Override public void onStopTrackingTouch(SeekBar seekBar) { }
         });
         mainSection.addView(intervalSeekBar, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, dp(34)));
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(22)));
 
         LinearLayout intervalLabels = new LinearLayout(this);
-        intervalLabels.setPadding(0, 0, 0, dp(6));
+        intervalLabels.setPadding(0, 0, 0, dp(4));
         for (int seconds : INTERVAL_STEPS) {
             TextView label = text(Integer.toString(seconds), 12, SECONDARY);
             label.setGravity(Gravity.CENTER);
-            intervalLabels.addView(label, new LinearLayout.LayoutParams(0, dp(22), 1));
+            intervalLabels.addView(label, new LinearLayout.LayoutParams(0, dp(18), 1));
         }
         mainSection.addView(intervalLabels);
 
@@ -837,9 +835,9 @@ public final class SettingsActivity extends Activity {
         currentFolderCheck.setTextColor(PRIMARY);
         currentFolderCheck.setTextSize(16);
         currentFolderCheck.setTypeface(uiTypeface);
-        currentFolderCheck.setPadding(dp(8), dp(4), dp(8), dp(4));
-        currentFolderCheck.setScaleX(0.94f);
-        currentFolderCheck.setScaleY(0.94f);
+        currentFolderCheck.setPadding(dp(4), dp(3), dp(6), dp(3));
+        currentFolderCheck.setMinHeight(dp(32));
+        currentFolderCheck.setMinimumHeight(dp(32));
         tintCheckBox(currentFolderCheck);
         currentFolderCheck.setOnClickListener(new View.OnClickListener() {
             @Override
@@ -1077,9 +1075,9 @@ public final class SettingsActivity extends Activity {
         checkBox.setTextSize(15);
         checkBox.setTypeface(uiTypeface);
         checkBox.setChecked(checked);
-        checkBox.setPadding(dp(6), dp(5), dp(6), dp(5));
-        checkBox.setScaleX(0.94f);
-        checkBox.setScaleY(0.94f);
+        checkBox.setPadding(dp(4), dp(3), dp(6), dp(3));
+        checkBox.setMinHeight(dp(32));
+        checkBox.setMinimumHeight(dp(32));
         tintCheckBox(checkBox);
         return checkBox;
     }
@@ -1137,10 +1135,8 @@ public final class SettingsActivity extends Activity {
 
     private Drawable intervalThumbDrawable() {
         GradientDrawable thumb = new GradientDrawable();
-        thumb.setShape(GradientDrawable.OVAL);
-        thumb.setColor(ACCENT);
-        thumb.setStroke(dp(2), PANEL);
-        thumb.setSize(dp(18), dp(18));
+        thumb.setColor(Color.TRANSPARENT);
+        thumb.setSize(dp(1), dp(1));
         return thumb;
     }
 
@@ -1151,27 +1147,6 @@ public final class SettingsActivity extends Activity {
         if (intervalSeekBar != null
                 && intervalSeekBar.getProgress() != intervalStepIndex(selectedInterval)) {
             intervalSeekBar.setProgress(intervalStepIndex(selectedInterval));
-        }
-    }
-
-    private final class IntervalSeekBar extends SeekBar {
-        private final Paint nodePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-
-        IntervalSeekBar(Context context) {
-            super(context);
-            nodePaint.setColor(ACCENT);
-        }
-
-        @Override
-        protected synchronized void onDraw(Canvas canvas) {
-            super.onDraw(canvas);
-            float usableWidth = getWidth() - getPaddingLeft() - getPaddingRight();
-            float centerY = getHeight() / 2.0f;
-            for (int i = 0; i < INTERVAL_STEPS.length; i++) {
-                float x = getPaddingLeft()
-                        + usableWidth * i / (INTERVAL_STEPS.length - 1.0f);
-                canvas.drawCircle(x, centerY, dp(2), nodePaint);
-            }
         }
     }
 
@@ -1748,11 +1723,20 @@ public final class SettingsActivity extends Activity {
     }
 
     private void tintCheckBox(CheckBox checkBox) {
-        if (Build.VERSION.SDK_INT >= 21) {
-            checkBox.setButtonTintList(new ColorStateList(
-                    new int[][] { new int[] { android.R.attr.state_checked }, new int[] {} },
-                    new int[] { ACCENT, SECONDARY }));
-        }
+        StateListDrawable states = new StateListDrawable();
+        states.addState(new int[] { android.R.attr.state_checked },
+                checkboxBox(ACCENT, ACCENT));
+        states.addState(new int[] {}, checkboxBox(Color.TRANSPARENT, SECONDARY));
+        checkBox.setButtonDrawable(states);
+    }
+
+    private Drawable checkboxBox(int fillColor, int strokeColor) {
+        GradientDrawable box = new GradientDrawable();
+        box.setColor(fillColor);
+        box.setCornerRadius(dp(2));
+        box.setStroke(dp(1), strokeColor);
+        box.setSize(dp(14), dp(14));
+        return box;
     }
 
     private void applyUiFont(View view) {

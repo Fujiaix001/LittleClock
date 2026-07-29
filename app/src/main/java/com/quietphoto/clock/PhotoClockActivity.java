@@ -1516,7 +1516,7 @@ public final class PhotoClockActivity extends Activity {
         pomodoroDialog.show();
         styleModernDialog(pomodoroDialog);
         Button returnToPomodoro = pomodoroDialog.getButton(AlertDialog.BUTTON_NEGATIVE);
-        if (returnToPomodoro != null) returnToPomodoro.setTextColor(Color.rgb(104, 213, 216));
+        if (returnToPomodoro != null) returnToPomodoro.setTextColor(ACTIVE_COLOR);
         refreshPomodoroDialog();
         photoHandler.removeCallbacks(pomodoroDialogTicker);
         photoHandler.postDelayed(pomodoroDialogTicker, 1000L);
