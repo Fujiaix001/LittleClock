@@ -1309,6 +1309,13 @@ public final class PhotoClockActivity extends Activity {
 
         pomodoroFocusPanel = new FrameLayout(this);
         pomodoroFocusPanel.setVisibility(View.GONE);
+        pomodoroFocusPanel.setClickable(true);
+        pomodoroFocusPanel.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                resumePomodoroFromFocusScreen();
+            }
+        });
         rootContainer.addView(pomodoroFocusPanel, new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 FrameLayout.LayoutParams.MATCH_PARENT));
@@ -2245,6 +2252,7 @@ public final class PhotoClockActivity extends Activity {
         if (!snapshot.hasSession) {
             applyPomodoroModeLayout(false);
             updatePomodoroQuickActions(false);
+            pomodoroFocusPanel.setClickable(false);
             pomodoroRow.setVisibility(View.GONE);
             return;
         }
@@ -2252,7 +2260,25 @@ public final class PhotoClockActivity extends Activity {
         pomodoroText.setText(PomodoroHelper.formatRemaining(snapshot.remainingMs));
         applyPomodoroModeLayout(true);
         updatePomodoroQuickActions(snapshot.running);
+        // 暫停時整個倒數畫面就是「繼續」按鈕；運行中仍讓既有觸控行為處理。
+        pomodoroFocusPanel.setClickable(!snapshot.running);
         pomodoroRow.setVisibility(View.VISIBLE);
+    }
+
+    /** A paused session is intentionally resumed from the focus screen itself. */
+    private void resumePomodoroFromFocusScreen() {
+        PomodoroHelper.Snapshot snapshot = PomodoroHelper.getSnapshot(this);
+        if (!snapshot.hasSession || snapshot.running) {
+            return;
+        }
+        boolean exact = PomodoroHelper.startOrResume(this);
+        if (!exact) {
+            Toast.makeText(this, "系統未提供精確提醒，倒數會在畫面開啟時持續更新",
+                    Toast.LENGTH_LONG).show();
+        }
+        updatePomodoroDisplay();
+        hideSettingsButton();
+        resetImmersiveTimeout();
     }
 
     private String pomodoroEnglishLabel(PomodoroHelper.Snapshot snapshot) {
