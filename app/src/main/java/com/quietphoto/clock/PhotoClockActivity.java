@@ -79,11 +79,22 @@ public final class PhotoClockActivity extends Activity {
 
     private static final int PERMISSION_REQUEST_CODE = 100;
     private static final int NOTIFICATION_PERMISSION_REQUEST_CODE = 101;
-    private static final long PHOTO_PAN_FRAME_MS = 67;
     private static final float PHOTO_PAN_TRAVEL_FRACTION = 0.20f;
     private static final String CLOCK_POS_X_RATIO = "clock_pos_x_ratio";
     private static final String CLOCK_POS_Y_RATIO = "clock_pos_y_ratio";
     public static final String CLOCK_SCALE_FACTOR = "clock_scale_factor";
+    public static final String CLOCK_SIZES_LINKED = "clock_sizes_linked";
+    public static final String LEGACY_BIND_SCALE = "bind_scale";
+    private static final String CLOCK_TIME_SCALE_FACTOR = "clock_time_scale_factor";
+    private static final String CLOCK_DATE_SCALE_FACTOR = "clock_date_scale_factor";
+    private static final String CLOCK_WEATHER_SCALE_FACTOR = "clock_weather_scale_factor";
+    private static final String LEGACY_TIME_SCALE_FACTOR = "time_scale_factor";
+    private static final String LEGACY_DATE_SCALE_FACTOR = "date_scale_factor";
+    private static final String LEGACY_WEATHER_SCALE_FACTOR = "weather_scale_factor";
+    private static final int SCALE_TARGET_NONE = 0;
+    private static final int SCALE_TARGET_TIME = 1;
+    private static final int SCALE_TARGET_DATE = 2;
+    private static final int SCALE_TARGET_WEATHER = 3;
     private static final String LAST_PHOTO_KEY = "last_photo_key";
     private static final String PHOTO_DIRECTORY = "QuietPanel/Photos";
     private static final int MAX_PHOTO_FILES = 50000;
@@ -170,6 +181,7 @@ public final class PhotoClockActivity extends Activity {
     private boolean photoCatalogLoaded;
     private String photoFolderSignature = "";
     private boolean photoPanReverse = true;
+    private long lastPhotoPanFrameAt;
     private boolean activityResumed;
     private boolean firstSlideshowStart = true;
     private boolean startupPhotoDisplayed;
@@ -234,6 +246,11 @@ public final class PhotoClockActivity extends Activity {
     private float clockStartTransX;
     private float clockStartTransY;
     private float clockScaleFactor = 1.0f;
+    private boolean clockSizesLinked = true;
+    private float timeScaleFactor = 1.0f;
+    private float dateScaleFactor = 1.0f;
+    private float weatherScaleFactor = 1.0f;
+    private int activeScaleTarget = SCALE_TARGET_NONE;
     private float clockBaseTranslationX;
     private float clockBaseTranslationY;
     private float burnInOffsetX;
@@ -631,9 +648,7 @@ public final class PhotoClockActivity extends Activity {
     @Override
     public void onConfigurationChanged(Configuration newConfig) {
         super.onConfigurationChanged(newConfig);
-        clockScaleFactor = prefs.getFloat(
-                orientationKey(CLOCK_SCALE_FACTOR),
-                1.0f);
+        loadClockScalePreferences(1.0f);
         applyClockScale();
         if (photoImage != null && photoBitmap != null) {
             applyPhotoPresentation(photoBitmap);
@@ -1130,9 +1145,7 @@ public final class PhotoClockActivity extends Activity {
         weatherLocationName = prefs.getString(SettingsActivity.WEATHER_LOCATION_NAME, "");
         weatherLatitude = parseDouble(prefs.getString(SettingsActivity.WEATHER_LATITUDE, null));
         weatherLongitude = parseDouble(prefs.getString(SettingsActivity.WEATHER_LONGITUDE, null));
-        clockScaleFactor = prefs.getFloat(
-                orientationKey(CLOCK_SCALE_FACTOR),
-                0.75f);
+        loadClockScalePreferences(0.75f);
 
         favoritePhotos.clear();
         hiddenPhotos.clear();
@@ -1828,20 +1841,100 @@ public final class PhotoClockActivity extends Activity {
         }
     }
 
+    private void loadClockScalePreferences(float defaultScale) {
+        clockScaleFactor = prefs.getFloat(
+                orientationKey(CLOCK_SCALE_FACTOR), defaultScale);
+        clockSizesLinked = prefs.getBoolean(CLOCK_SIZES_LINKED,
+                prefs.getBoolean(LEGACY_BIND_SCALE, true));
+        if (clockSizesLinked) {
+            timeScaleFactor = clockScaleFactor;
+            dateScaleFactor = clockScaleFactor;
+            weatherScaleFactor = clockScaleFactor;
+            return;
+        }
+        timeScaleFactor = loadComponentScale(
+                CLOCK_TIME_SCALE_FACTOR, LEGACY_TIME_SCALE_FACTOR, clockScaleFactor);
+        dateScaleFactor = loadComponentScale(
+                CLOCK_DATE_SCALE_FACTOR, LEGACY_DATE_SCALE_FACTOR, clockScaleFactor);
+        weatherScaleFactor = loadComponentScale(
+                CLOCK_WEATHER_SCALE_FACTOR, LEGACY_WEATHER_SCALE_FACTOR, clockScaleFactor);
+    }
+
+    private float loadComponentScale(String key, String legacyKey, float defaultScale) {
+        String orientedKey = orientationKey(key);
+        if (prefs.contains(orientedKey)) return prefs.getFloat(orientedKey, defaultScale);
+        return prefs.getFloat(orientationKey(legacyKey), defaultScale);
+    }
+
     private void applyClockScale() {
-        if (clockPanel != null) {
-            clockPanel.setPivotX(clockPanel.getWidth() / 2f);
-            clockPanel.setPivotY(clockPanel.getHeight() / 2f);
-            float displayScale = pomodoroModeLayoutActive ? 1.0f : clockScaleFactor;
-            clockPanel.setScaleX(displayScale);
-            clockPanel.setScaleY(displayScale);
+        if (clockPanel == null) return;
+        clockPanel.setPivotX(clockPanel.getWidth() / 2f);
+        clockPanel.setPivotY(clockPanel.getHeight() / 2f);
+        if (pomodoroModeLayoutActive) {
+            clockPanel.setScaleX(1.0f);
+            clockPanel.setScaleY(1.0f);
+            return;
+        }
+        if (clockSizesLinked) {
+            applyClockComponentSizes(1.0f, 1.0f, 1.0f);
+            clockPanel.setScaleX(clockScaleFactor);
+            clockPanel.setScaleY(clockScaleFactor);
+        } else {
+            clockPanel.setScaleX(1.0f);
+            clockPanel.setScaleY(1.0f);
+            applyClockComponentSizes(timeScaleFactor, dateScaleFactor, weatherScaleFactor);
+        }
+    }
+
+    /** Relayouts independently sized text instead of scaling it inside stale view bounds. */
+    private void applyClockComponentSizes(float timeScale, float dateScale, float weatherScale) {
+        if (photoTime != null) photoTime.setTextSize(64.0f * timeScale);
+        if (photoDate != null) photoDate.setTextSize(24.0f * dateScale);
+        if (compactWeatherTemperature != null) {
+            compactWeatherTemperature.setTextSize(18.0f * weatherScale);
+        }
+        if (weatherTemperature != null) weatherTemperature.setTextSize(20.0f * weatherScale);
+        if (weatherLocation != null) weatherLocation.setTextSize(14.0f * weatherScale);
+        if (compactWeatherIcon != null) {
+            int size = Math.max(1, Math.round(22.0f * weatherScale));
+            resizeView(compactWeatherIcon, size, size);
+        }
+        if (weatherIcon != null) {
+            int size = Math.max(1, Math.round(30.0f * weatherScale));
+            resizeView(weatherIcon, size, size);
         }
     }
 
     private void saveClockScaleFactor() {
         if (prefs != null) {
-            prefs.edit().putFloat(orientationKey(CLOCK_SCALE_FACTOR), clockScaleFactor).apply();
+            prefs.edit()
+                    .putFloat(orientationKey(CLOCK_SCALE_FACTOR), clockScaleFactor)
+                    .putBoolean(CLOCK_SIZES_LINKED, clockSizesLinked)
+                    .putFloat(orientationKey(CLOCK_TIME_SCALE_FACTOR), timeScaleFactor)
+                    .putFloat(orientationKey(CLOCK_DATE_SCALE_FACTOR), dateScaleFactor)
+                    .putFloat(orientationKey(CLOCK_WEATHER_SCALE_FACTOR), weatherScaleFactor)
+                    .apply();
         }
+    }
+
+    private float clampClockScale(float scale) {
+        return Math.max(0.4f, Math.min(6.0f, scale));
+    }
+
+    private boolean isPointInView(float x, float y, View view) {
+        if (view == null || view.getVisibility() != View.VISIBLE) return false;
+        int[] location = new int[2];
+        view.getLocationInWindow(location);
+        return x >= location[0] && x <= location[0] + view.getWidth()
+                && y >= location[1] && y <= location[1] + view.getHeight();
+    }
+
+    private int findScaleTarget(float x, float y) {
+        if (isPointInView(x, y, photoTime)) return SCALE_TARGET_TIME;
+        if (isPointInView(x, y, compactWeatherRow)
+                || isPointInView(x, y, weatherRow)) return SCALE_TARGET_WEATHER;
+        if (isPointInView(x, y, photoDate)) return SCALE_TARGET_DATE;
+        return SCALE_TARGET_NONE;
     }
 
     private void setupClockDragAndDrop() {
@@ -1849,8 +1942,18 @@ public final class PhotoClockActivity extends Activity {
             @Override
             public boolean onScale(ScaleGestureDetector detector) {
                 float factor = detector.getScaleFactor();
-                clockScaleFactor *= factor;
-                clockScaleFactor = Math.max(0.4f, Math.min(6.0f, clockScaleFactor));
+                if (clockSizesLinked) {
+                    clockScaleFactor = clampClockScale(clockScaleFactor * factor);
+                    timeScaleFactor = clockScaleFactor;
+                    dateScaleFactor = clockScaleFactor;
+                    weatherScaleFactor = clockScaleFactor;
+                } else if (activeScaleTarget == SCALE_TARGET_TIME) {
+                    timeScaleFactor = clampClockScale(timeScaleFactor * factor);
+                } else if (activeScaleTarget == SCALE_TARGET_DATE) {
+                    dateScaleFactor = clampClockScale(dateScaleFactor * factor);
+                } else if (activeScaleTarget == SCALE_TARGET_WEATHER) {
+                    weatherScaleFactor = clampClockScale(weatherScaleFactor * factor);
+                }
                 applyClockScale();
                 return true;
             }
@@ -1858,6 +1961,11 @@ public final class PhotoClockActivity extends Activity {
             @Override
             public boolean onScaleBegin(ScaleGestureDetector detector) {
                 if (pomodoroModeLayoutActive) return false;
+                if (!clockSizesLinked) {
+                    activeScaleTarget = findScaleTarget(
+                            detector.getFocusX(), detector.getFocusY());
+                    if (activeScaleTarget == SCALE_TARGET_NONE) return false;
+                }
                 isScalingClock = true;
                 return true;
             }
@@ -1866,6 +1974,7 @@ public final class PhotoClockActivity extends Activity {
             public void onScaleEnd(ScaleGestureDetector detector) {
                 isScalingClock = false;
                 saveClockScaleFactor();
+                activeScaleTarget = SCALE_TARGET_NONE;
             }
         });
 
@@ -2344,6 +2453,7 @@ public final class PhotoClockActivity extends Activity {
             return;
         }
         photoPanReverse = !photoPanReverse;
+        lastPhotoPanFrameAt = 0L;
         photoPanAnimator = android.animation.ValueAnimator.ofFloat(0.0f, 1.0f);
         photoPanAnimator.setDuration(photoPanDurationMs);
         photoPanAnimator.setInterpolator(new android.view.animation.LinearInterpolator());
@@ -2354,7 +2464,14 @@ public final class PhotoClockActivity extends Activity {
                     animation.cancel();
                     return;
                 }
-                applyPhotoPan((Float) animation.getAnimatedValue());
+                float progress = (Float) animation.getAnimatedValue();
+                long now = SystemClock.uptimeMillis();
+                if (!PhotoPanPolicy.shouldRender(
+                        progress, lastPhotoPanFrameAt, now)) {
+                    return;
+                }
+                lastPhotoPanFrameAt = now;
+                applyPhotoPan(progress);
             }
         });
         photoPanAnimator.start();
@@ -2364,6 +2481,7 @@ public final class PhotoClockActivity extends Activity {
         if (photoPanAnimator != null) {
             photoPanAnimator.cancel();
         }
+        lastPhotoPanFrameAt = 0L;
     }
 
     private void safeRecycle(Bitmap bitmap) {
@@ -2554,7 +2672,6 @@ public final class PhotoClockActivity extends Activity {
                 pomodoroFocusPanel.setVisibility(View.GONE);
             }
             applyClockTranslation();
-            applyClockScale();
             if (rootContainer != null) {
                 rootContainer.post(new Runnable() {
                     @Override
@@ -2590,6 +2707,7 @@ public final class PhotoClockActivity extends Activity {
             pomodoroText.setTextSize(112);
             pomodoroText.setTextColor(isNightSleepActive ? dimColor : POMODORO_RED);
         }
+        applyClockScale();
         if (active) applyPomodoroFocusLayout();
     }
 

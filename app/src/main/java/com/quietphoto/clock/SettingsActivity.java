@@ -116,6 +116,7 @@ public final class SettingsActivity extends Activity {
     private int selectedInterval;
     private boolean clockTimeEnabled = true;
     private boolean clockDateEnabled = true;
+    private boolean clockSizesLinked = true;
     private boolean clockBgEnabled;
     private int selectedFontStyle;
     private String selectedFontId;
@@ -165,6 +166,7 @@ public final class SettingsActivity extends Activity {
     private CheckBox nightModeCheck;
     private CheckBox clockTimeCheck;
     private CheckBox clockDateCheck;
+    private CheckBox clockSizesLinkedCheck;
     private CheckBox clockBgCheck;
     private CheckBox adaptiveColorCheck;
     private CheckBox polaroidFrameCheck;
@@ -221,6 +223,8 @@ public final class SettingsActivity extends Activity {
                 prefs.getInt(PHOTO_INTERVAL_SECONDS, DEFAULT_INTERVAL_SECONDS));
         clockTimeEnabled = prefs.getBoolean(CLOCK_TIME_ENABLED, true);
         clockDateEnabled = prefs.getBoolean(CLOCK_DATE_ENABLED, true);
+        clockSizesLinked = prefs.getBoolean(PhotoClockActivity.CLOCK_SIZES_LINKED,
+                prefs.getBoolean(PhotoClockActivity.LEGACY_BIND_SCALE, true));
         clockBgEnabled = prefs.getBoolean(CLOCK_BACKGROUND_ENABLED, false);
         selectedFontStyle = prefs.getInt(CLOCK_FONT_STYLE, 0);
         String defaultFont = BuildConfig.INCLUDE_STOROPIA ? "asset:font_storopia.ttf" : "asset:font_oxanium.ttf";
@@ -718,6 +722,9 @@ public final class SettingsActivity extends Activity {
 
         clockDateCheck = checkBox("顯示日期", clockDateEnabled);
         mainSection.addView(clockDateCheck);
+
+        clockSizesLinkedCheck = checkBox("綁定時間、日期、天氣大小", clockSizesLinked);
+        mainSection.addView(clockSizesLinkedCheck);
 
         clockBgCheck = checkBox("時間底板", clockBgEnabled);
         mainSection.addView(clockBgCheck);
@@ -1601,6 +1608,8 @@ public final class SettingsActivity extends Activity {
                 .putInt(PHOTO_INTERVAL_SECONDS, selectedInterval)
                 .putBoolean(CLOCK_TIME_ENABLED, clockTimeCheck.isChecked())
                 .putBoolean(CLOCK_DATE_ENABLED, clockDateCheck.isChecked())
+                .putBoolean(PhotoClockActivity.CLOCK_SIZES_LINKED,
+                        clockSizesLinkedCheck.isChecked())
                 .putBoolean(CLOCK_BACKGROUND_ENABLED, clockBgCheck.isChecked())
                 .putString(CLOCK_FONT_ID, selectedFontId)
                 .putString(DATE_FONT_ID, selectedDateFontId)
