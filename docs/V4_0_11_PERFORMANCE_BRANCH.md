@@ -2,6 +2,14 @@
 
 Branch: `codex/v4.0.11-performance`
 
+## Status: DEPRECATED — DO NOT INSTALL
+
+This branch is retained for history only. Its independent scaling still draws
+the enlarged text inside the original layout-sized frame, so scaled glyphs can
+be clipped. Do not use its APKs as a release or as a performance baseline.
+
+The main branch was not changed by this deprecation.
+
 This branch deliberately keeps LittleClock at version 4.0.11. It is a focused,
 reusable performance baseline rather than a new product release.
 
