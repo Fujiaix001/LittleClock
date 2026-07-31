@@ -65,6 +65,8 @@ public final class SettingsActivity extends Activity {
     public static final String CLOCK_BACKGROUND_ENABLED = "clock_bg_enabled";
     public static final String CLOCK_FONT_STYLE = "clock_font_style";
     public static final String CLOCK_FONT_ID = "clock_font_id";
+    public static final String DATE_FONT_ID = "date_font_id";
+    public static final String WEATHER_FONT_ID = "weather_font_id";
     public static final String NIGHT_MODE_ENABLED = "night_mode_enabled";
     public static final String NIGHT_START_HOUR = "night_start_hour";
     public static final String NIGHT_END_HOUR = "night_end_hour";
@@ -117,6 +119,8 @@ public final class SettingsActivity extends Activity {
     private boolean clockBgEnabled;
     private int selectedFontStyle;
     private String selectedFontId;
+    private String selectedDateFontId;
+    private String selectedWeatherFontId;
     private List<FontManager.FontOption> fontOptions;
     private boolean nightModeEnabled;
     private int nightStartHour;
@@ -181,6 +185,8 @@ public final class SettingsActivity extends Activity {
     private LinearLayout folderList;
 
     private Spinner fontSpinner;
+    private Spinner dateFontSpinner;
+    private Spinner weatherFontSpinner;
     private Spinner transitionSpinner;
     private Spinner displayModeSpinner;
     private final ExecutorService networkExecutor = Executors.newSingleThreadExecutor();
@@ -220,6 +226,10 @@ public final class SettingsActivity extends Activity {
         String defaultFont = BuildConfig.INCLUDE_STOROPIA ? "asset:font_storopia.ttf" : "asset:font_oxanium.ttf";
         selectedFontId = FontManager.normalizeId(this, prefs.getString(
                 CLOCK_FONT_ID, selectedFontStyle == 0 ? defaultFont : FontManager.getIdForLegacyIndex(selectedFontStyle)));
+        selectedDateFontId = FontManager.normalizeId(this, prefs.getString(
+                DATE_FONT_ID, selectedFontId));
+        selectedWeatherFontId = FontManager.normalizeId(this, prefs.getString(
+                WEATHER_FONT_ID, selectedFontId));
         fontOptions = FontManager.getOptions(this);
         nightModeEnabled = prefs.getBoolean(NIGHT_MODE_ENABLED, false);
         nightStartHour = prefs.getInt(NIGHT_START_HOUR, 23);
@@ -518,9 +528,15 @@ public final class SettingsActivity extends Activity {
 
         fontSpinner = addSpinner(
                 mainSection,
-                "時鐘字型",
+                "時間字型",
                 FontManager.getDisplayNames(fontOptions),
                 FontManager.findOptionIndex(fontOptions, selectedFontId));
+
+        dateFontSpinner = addSpinner(
+                mainSection,
+                "日期字型",
+                FontManager.getDisplayNames(fontOptions),
+                FontManager.findOptionIndex(fontOptions, selectedDateFontId));
 
         displayModeSpinner = addSpinner(
                 mainSection,
@@ -556,6 +572,12 @@ public final class SettingsActivity extends Activity {
 
         weatherLocationCheck = checkBox("顯示英文地名", weatherShowLocation);
         weatherOptions.addView(weatherLocationCheck);
+
+        weatherFontSpinner = addSpinner(
+                weatherOptions,
+                "天氣字型",
+                FontManager.getDisplayNames(fontOptions),
+                FontManager.findOptionIndex(fontOptions, selectedWeatherFontId));
 
         weatherCompactCheck = checkBox(
                 "精簡排列（無地名時與日期同列）", weatherCompactMode);
@@ -1561,6 +1583,12 @@ public final class SettingsActivity extends Activity {
         int fontIndex = Math.max(0, Math.min(
                 fontOptions.size() - 1, fontSpinner.getSelectedItemPosition()));
         selectedFontId = fontOptions.get(fontIndex).id;
+        int dateFontIndex = Math.max(0, Math.min(
+                fontOptions.size() - 1, dateFontSpinner.getSelectedItemPosition()));
+        selectedDateFontId = fontOptions.get(dateFontIndex).id;
+        int weatherFontIndex = Math.max(0, Math.min(
+                fontOptions.size() - 1, weatherFontSpinner.getSelectedItemPosition()));
+        selectedWeatherFontId = fontOptions.get(weatherFontIndex).id;
         selectedTransition = Math.max(0, Math.min(5, transitionSpinner.getSelectedItemPosition()));
         selectedDisplayMode = Math.max(0, Math.min(2, displayModeSpinner.getSelectedItemPosition()));
         if (weatherEnabledCheck.isChecked()
@@ -1575,6 +1603,8 @@ public final class SettingsActivity extends Activity {
                 .putBoolean(CLOCK_DATE_ENABLED, clockDateCheck.isChecked())
                 .putBoolean(CLOCK_BACKGROUND_ENABLED, clockBgCheck.isChecked())
                 .putString(CLOCK_FONT_ID, selectedFontId)
+                .putString(DATE_FONT_ID, selectedDateFontId)
+                .putString(WEATHER_FONT_ID, selectedWeatherFontId)
                 .putBoolean(NIGHT_MODE_ENABLED, nightModeCheck.isChecked())
                 .putInt(NIGHT_START_HOUR, nightStartHour)
                 .putInt(NIGHT_END_HOUR, nightEndHour)

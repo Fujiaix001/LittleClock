@@ -17,6 +17,8 @@ import java.util.Set;
 
 public final class FontManager {
     public static final String DEFAULT_ID = "system:bold";
+    private static final String STOROPIA_ID = "asset:font_storopia.ttf";
+    private static final String STOROPIA_SYNTHETIC_BOLD_ID = "synthetic:storopia-bold";
 
     public static final class FontOption {
         public final String id;
@@ -40,7 +42,8 @@ public final class FontManager {
             { "asset:font_audiowide.ttf", "Audiowide" },
             { "asset:font_oxanium.ttf", "Oxanium" },
             { "asset:font_sairastencil.ttf", "Saira Stencil One" },
-            { "asset:font_zendots.ttf", "Zen Dots" }
+            { "asset:font_zendots.ttf", "Zen Dots" },
+            { "asset:font_huninn.ttf", "LittleClock 粉圓體" }
     };
 
     private static final Set<String> LATIN_DATE_IDS = new HashSet<String>();
@@ -53,7 +56,8 @@ public final class FontManager {
         LATIN_DATE_IDS.add("asset:font_oxanium.ttf");
         LATIN_DATE_IDS.add("asset:font_sairastencil.ttf");
         LATIN_DATE_IDS.add("asset:font_zendots.ttf");
-        LATIN_DATE_IDS.add("asset:font_storopia.ttf");
+        LATIN_DATE_IDS.add(STOROPIA_ID);
+        LATIN_DATE_IDS.add(STOROPIA_SYNTHETIC_BOLD_ID);
     }
 
     private FontManager() {
@@ -81,7 +85,9 @@ public final class FontManager {
             options.add(new FontOption(bundled[0], bundled[1]));
         }
         if (BuildConfig.INCLUDE_STOROPIA) {
-            options.add(new FontOption("asset:font_storopia.ttf", "Storopia（測試）"));
+            options.add(new FontOption(STOROPIA_ID, "Storopia（測試）"));
+            options.add(new FontOption(STOROPIA_SYNTHETIC_BOLD_ID,
+                    "Storopia（合成粗體，測試）"));
         }
 
         options.add(new FontOption("system:sans", "系統 · 無襯線"));
@@ -106,7 +112,7 @@ public final class FontManager {
     public static String getIdForLegacyIndex(int style) {
         if (style <= 0) return DEFAULT_ID;
         if (style >= 1 && style <= BUNDLED.length) return BUNDLED[style - 1][0];
-        if (style == 12 && BuildConfig.INCLUDE_STOROPIA) return "asset:font_storopia.ttf";
+        if (style == 12 && BuildConfig.INCLUDE_STOROPIA) return STOROPIA_ID;
         return DEFAULT_ID;
     }
 
@@ -128,7 +134,8 @@ public final class FontManager {
         for (String[] bundled : BUNDLED) {
             if (bundled[0].equals(id)) return id;
         }
-        if (BuildConfig.INCLUDE_STOROPIA && "asset:font_storopia.ttf".equals(id)) {
+        if (BuildConfig.INCLUDE_STOROPIA && (STOROPIA_ID.equals(id)
+                || STOROPIA_SYNTHETIC_BOLD_ID.equals(id))) {
             return id;
         }
         if (Build.VERSION.SDK_INT >= 29 && id.startsWith("system-file:")) {
@@ -160,9 +167,14 @@ public final class FontManager {
         Typeface fallback = Typeface.SANS_SERIF;
         try {
             Typeface result;
-            if (normalized.startsWith("asset:")) {
+            boolean syntheticStoropiaBold = STOROPIA_SYNTHETIC_BOLD_ID.equals(normalized);
+            if (normalized.startsWith("asset:") || syntheticStoropiaBold) {
+                String assetId = syntheticStoropiaBold ? STOROPIA_ID : normalized;
                 result = Typeface.createFromAsset(
-                        context.getAssets(), "fonts/" + normalized.substring("asset:".length()));
+                        context.getAssets(), "fonts/" + assetId.substring("asset:".length()));
+                if (syntheticStoropiaBold) {
+                    result = Typeface.create(result, Typeface.BOLD);
+                }
             } else if (normalized.startsWith("system-file:") && Build.VERSION.SDK_INT >= 29) {
                 result = Api29Fonts.load(normalized.substring("system-file:".length()));
             } else {

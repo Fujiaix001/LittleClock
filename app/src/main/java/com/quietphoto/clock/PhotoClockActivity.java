@@ -179,6 +179,8 @@ public final class PhotoClockActivity extends Activity {
     private long photoPanDurationMs = 43000L;
     private boolean clockBgEnabled;
     private String clockFontId = FontManager.DEFAULT_ID;
+    private String dateFontId = FontManager.DEFAULT_ID;
+    private String weatherFontId = FontManager.DEFAULT_ID;
     private boolean nightModeEnabled;
     private int nightStartHour = 23;
     private int nightEndHour = 7;
@@ -1102,6 +1104,10 @@ public final class PhotoClockActivity extends Activity {
         clockFontId = FontManager.normalizeId(this, prefs.getString(
                 SettingsActivity.CLOCK_FONT_ID,
                 legacyFontStyle == 0 ? defaultFont : FontManager.getIdForLegacyIndex(legacyFontStyle)));
+        dateFontId = FontManager.normalizeId(this, prefs.getString(
+                SettingsActivity.DATE_FONT_ID, clockFontId));
+        weatherFontId = FontManager.normalizeId(this, prefs.getString(
+                SettingsActivity.WEATHER_FONT_ID, clockFontId));
         nightModeEnabled = prefs.getBoolean(SettingsActivity.NIGHT_MODE_ENABLED, false);
         nightStartHour = prefs.getInt(SettingsActivity.NIGHT_START_HOUR, 23);
         nightEndHour = prefs.getInt(SettingsActivity.NIGHT_END_HOUR, 7);
@@ -1244,22 +1250,24 @@ public final class PhotoClockActivity extends Activity {
             return;
         }
 
-        android.graphics.Typeface tf = FontManager.getFont(this, clockFontId);
+        android.graphics.Typeface clockTypeface = FontManager.getFont(this, clockFontId);
+        android.graphics.Typeface dateTypeface = FontManager.getFont(this, dateFontId);
+        android.graphics.Typeface weatherTypeface = FontManager.getFont(this, weatherFontId);
 
         if (photoTime != null) {
-            photoTime.setTypeface(tf);
+            photoTime.setTypeface(clockTypeface);
             photoTime.setVisibility(clockTimeEnabled ? View.VISIBLE : View.GONE);
         }
         if (photoDate != null) {
-            photoDate.setTypeface(tf);
+            photoDate.setTypeface(dateTypeface);
             photoDate.setVisibility(clockDateEnabled ? View.VISIBLE : View.GONE);
         }
-        if (weatherTemperature != null) weatherTemperature.setTypeface(tf);
-        if (compactWeatherTemperature != null) compactWeatherTemperature.setTypeface(tf);
-        if (alarmTimeText != null) alarmTimeText.setTypeface(tf);
-        if (weatherLocation != null) weatherLocation.setTypeface(tf);
-        if (pomodoroLabel != null) pomodoroLabel.setTypeface(tf);
-        if (pomodoroText != null) pomodoroText.setTypeface(tf);
+        if (weatherTemperature != null) weatherTemperature.setTypeface(weatherTypeface);
+        if (compactWeatherTemperature != null) compactWeatherTemperature.setTypeface(weatherTypeface);
+        if (weatherLocation != null) weatherLocation.setTypeface(weatherTypeface);
+        if (alarmTimeText != null) alarmTimeText.setTypeface(clockTypeface);
+        if (pomodoroLabel != null) pomodoroLabel.setTypeface(clockTypeface);
+        if (pomodoroText != null) pomodoroText.setTypeface(clockTypeface);
         updatePhotoClock();
 
         if (clockBgEnabled) {
@@ -2471,7 +2479,7 @@ public final class PhotoClockActivity extends Activity {
             photoTime.setText(photoTimeFormat.format(nowDate));
         }
         if (photoDate != null) {
-            if (FontManager.usesLatinDate(clockFontId)) {
+            if (FontManager.usesLatinDate(dateFontId)) {
                 photoDate.setText(photoDateFormatEn.format(nowDate));
             } else {
                 photoDate.setText(photoDateFormat.format(nowDate));

@@ -1,4 +1,4 @@
-# ⏰ 小時鐘 (LittleClock) 4.0.7
+# ⏰ 小時鐘 (LittleClock) 4.0.8
 
 一款輕量、無廣告、無背景常駐的 Android 相片時鐘；僅使用 AndroidX ExifInterface 處理相片方向。
 適用於新舊平板、手機、電視盒與 Amazon Fire 平板。
@@ -18,10 +18,11 @@
   - 依畫面明暗分布調整取景位置。
   - **相片 EXIF 方向自動修正**：相機直拍/橫拍照片自動旋轉呈現。
   - 限制解碼像素並在記憶體不足時降級重試。
-- **11 款開源字型與 1 款內部測試字型**：
-  - 收錄 Orbitron、DotGothic16、Noto Sans/Serif JP、Zen Maru Gothic、Klee One、Dela Gothic One、Audiowide、Oxanium、Saira Stencil One 與 Zen Dots。
+- **13 款開源字型與 1 款內部測試字型**：
+  - 收錄 Orbitron、DotGothic16、Noto Sans/Serif JP、Zen Maru Gothic、Klee One、Dela Gothic One、芫荽、LittleClock 粉圓體（源自 jf open 粉圓）、Audiowide、Oxanium、Saira Stencil One 與 Zen Dots。
+  - 時間、日期與天氣可分別選擇字型；日期格式由日期字型決定，因此科技感拉丁數字可搭配繁中文字型。
   - 字型採用 `FontSubsetting` 技術縮減檔案大小。
-  - 12 個 `.ttf` 合計約 262 KB；CJK 字型只保留日期所需中文字，Latin 字型使用英文日期。
+  - 標準版 13 個 `.ttf` 合計約 798 KB；CJK 字型只保留介面實際需要的日期中文字，Latin 字型使用英文日期。
   - Storopia 僅供內部測試，授權確認前不可分發含此字型的 APK。
 - **系統字型**：Android 4.2 起可選系統無襯線、襯線與等寬字型；Android 10 以上另列出裝置實際安裝的系統字型，不複製進 APK。
 - **選用天氣**：
@@ -49,8 +50,8 @@
 ```
 構建會固定產生一組雙版本：
 
-- `dist/LittleClock-v4.0.7-test-android4.2-storopia.apk`：含 Storopia，僅供內部測試，使用獨立套件名稱。
-- `dist/LittleClock-v4.0.7.apk`：標準正式版，不含 Storopia。
+- `dist/LittleClock-v4.0.8-test-android4.2-storopia.apk`：含 Storopia，僅供內部測試，使用獨立套件名稱。
+- `dist/LittleClock-v4.0.8.apk`：標準正式版，不含 Storopia。
 
 首次建立 release APK 前，請妥善保存專案根目錄的 `keystore.properties` 與 `keystore/littleclock-release.jks`；兩者已被 Git 忽略，遺失後無法用同一簽章更新既有正式版。
 

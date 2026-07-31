@@ -7,10 +7,10 @@
 ## 📌 1. 專案基本資訊與位置
 
 - **專案名稱**：小時鐘 (LittleClock)
-- **當前版本**：`v4.0.7-test-android4.2-storopia` / `v4.0.7`
+- **當前版本**：`v4.0.8-test-android4.2-storopia` / `v4.0.8`
 - **專案絕對路徑**：`C:\Users\hsuchungming\Desktop\WorkSpace\LittleClock`
-- **測試包位置**：`C:\Users\hsuchungming\Desktop\WorkSpace\LittleClock\dist\LittleClock-v4.0.7-test-android4.2-storopia.apk`
-- **標準包位置**：`C:\Users\hsuchungming\Desktop\WorkSpace\LittleClock\dist\LittleClock-v4.0.7.apk`
+- **測試包位置**：`C:\Users\hsuchungming\Desktop\WorkSpace\LittleClock\dist\LittleClock-v4.0.8-test-android4.2-storopia.apk`
+- **標準包位置**：`C:\Users\hsuchungming\Desktop\WorkSpace\LittleClock\dist\LittleClock-v4.0.8.apk`
 - **授權狀態**：Storopia 的分發授權尚未確認；包含此字型的 APK 僅供內部測試。
 
 ---
@@ -20,8 +20,9 @@
 1. **核心技術**：原生 Android Java（`compileSdk 36`, `targetSdk 36`, `minSdk 17`）。
 2. **最小依賴**：僅使用 AndroidX ExifInterface；標準 release APK 約 **5.6 MB**（包含內建精選風景資產）。
 3. **字型資產**：
-   - 採用 `FontSubsetting` 技術收錄 11 款開源字型與 Storopia 內部測試字型。
-   - **Latin 字型規則**：選擇 Orbitron、Audiowide、Oxanium、Saira Stencil、Zen Dots 或 Storopia 時，日期與星期自動切換為英文格式（例如 `Wed, Jul 22`）。
+   - 採用 `FontSubsetting` 技術收錄 13 款開源字型與 Storopia 內部測試字型；新增臺灣繁中圓體 jf open 粉圓 2.1 子集。依 OFL 保留名稱條款，子集內部 family name 改為 `LittleClock FenYuan`。
+   - 時間、日期與天氣分別保存 `clock_font_id`、`date_font_id`、`weather_font_id`；舊安裝若無後兩項會沿用時間字型。
+   - **Latin 字型規則**：日期選擇 Orbitron、Audiowide、Oxanium、Saira Stencil、Zen Dots 或 Storopia 時，日期與星期自動切換為英文格式（例如 `Wed, Jul 22`）。
 4. **專屬 App Icon**：深藍底、青綠相片山脈與 `12:00`；API 26+ 使用 Adaptive Icon。
 
 ---
@@ -29,7 +30,10 @@
 ## 🌟 3. 已完成的核心功能與關鍵優化
 
 - **字型目錄集中管理 (v1.4.0-test)**：
-  - 所有字型名稱、資產路徑與日期語系邏輯集中於 `FontManager`，並由建置任務檢查 12 個字型檔。
+  - 所有字型名稱、資產路徑與日期語系邏輯集中於 `FontManager`，並由建置任務檢查標準版 13 個字型檔。
+- **時間／日期／天氣獨立字型**：
+  - 設定頁提供三組字型選單；日期語系只跟日期字型連動，天氣的溫度與地名則共用天氣字型。
+  - `prepare_fonts.py` 可接受檔名參數，只重建指定子集，例如 `python prepare_fonts.py font_huninn.ttf`。
 - **低階裝置播放控制 (v1.5.0-test)**：
   - 左右滑動、固定 50 筆播放歷史、一輪不重複、防烙印微移與直橫向獨立位置。
   - 低耗電模式預設開啟；柔和背景只使用 48×48 Bitmap，進階像素分析可完全停用。
@@ -94,5 +98,5 @@ git status
 ## 💬 6. 新對話接續提示 (在新對話直接發送以下文字即可)
 
 ```text
-我們正在維護「小時鐘」(LittleClock) Android 專案，專案路徑為 C:\Users\hsuchungming\Desktop\WorkSpace\LittleClock，當前版本為 v4.0.7-test / v4.0.7，已完成 Git 初始化。請參考該目錄下的 HANDOVER_GUIDE.md 並在開始寫作前先檢查 Git 管理狀態。
+我們正在維護「小時鐘」(LittleClock) Android 專案，專案路徑為 C:\Users\hsuchungming\Desktop\WorkSpace\LittleClock，當前版本為 v4.0.8-test / v4.0.8，已完成 Git 初始化。請參考該目錄下的 HANDOVER_GUIDE.md 並在開始寫作前先檢查 Git 管理狀態。
 ```

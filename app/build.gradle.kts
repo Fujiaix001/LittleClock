@@ -6,7 +6,7 @@ plugins {
 
 val versionMajor = 4
 val versionMinor = 0
-val basePatch = 7
+val basePatch = 9
 val appVersionCode = (versionMajor * 10_000) + (versionMinor * 100) + basePatch
 val releasePropertiesFile = rootProject.file("keystore.properties")
 val releaseProperties = Properties().apply {
@@ -107,6 +107,7 @@ val bundledFontNames = setOf(
     "font_audiowide.ttf",
     "font_digital.ttf",
     "font_heavy.ttf",
+    "font_huninn.ttf",
     "font_iansui.ttf",
     "font_kai.ttf",
     "font_orbitron.ttf",
