@@ -115,6 +115,7 @@ public final class SettingsActivity extends Activity {
     private final Set<String> newlyGrantedTreeSources = new LinkedHashSet<String>();
     private int selectedInterval;
     private boolean clockTimeEnabled = true;
+    private boolean bindScale = true;
     private boolean clockDateEnabled = true;
     private boolean clockBgEnabled;
     private int selectedFontStyle;
@@ -221,7 +222,7 @@ public final class SettingsActivity extends Activity {
         selectedInterval = nearestIntervalStep(
                 prefs.getInt(PHOTO_INTERVAL_SECONDS, DEFAULT_INTERVAL_SECONDS));
         clockTimeEnabled = prefs.getBoolean(CLOCK_TIME_ENABLED, true);
-        boolean bindScale = prefs.getBoolean(PhotoClockActivity.BIND_SCALE, true);
+        bindScale = prefs.getBoolean(PhotoClockActivity.BIND_SCALE, true);
         clockDateEnabled = prefs.getBoolean(CLOCK_DATE_ENABLED, true);
         clockBgEnabled = prefs.getBoolean(CLOCK_BACKGROUND_ENABLED, false);
         selectedFontStyle = prefs.getInt(CLOCK_FONT_STYLE, 0);

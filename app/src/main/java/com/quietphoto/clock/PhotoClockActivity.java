@@ -79,7 +79,10 @@ public final class PhotoClockActivity extends Activity {
 
     private static final int PERMISSION_REQUEST_CODE = 100;
     private static final int NOTIFICATION_PERMISSION_REQUEST_CODE = 101;
-    private static final long PHOTO_PAN_FRAME_MS = 67;
+    // A slow Ken Burns pan does not need display-rate updates. Keep the original
+    // 15 FPS target on modern devices and lower old Android devices to 10 FPS.
+    private static final long PHOTO_PAN_FRAME_MS = 67L;
+    private static final long PHOTO_PAN_OLD_DEVICE_FRAME_MS = 100L;
     private static final float PHOTO_PAN_TRAVEL_FRACTION = 0.20f;
     private static final String CLOCK_POS_X_RATIO = "clock_pos_x_ratio";
     private static final String CLOCK_POS_Y_RATIO = "clock_pos_y_ratio";
@@ -174,6 +177,7 @@ public final class PhotoClockActivity extends Activity {
     private boolean photoCatalogLoaded;
     private String photoFolderSignature = "";
     private boolean photoPanReverse = true;
+    private long lastPhotoPanFrameAt;
     private boolean activityResumed;
     private boolean firstSlideshowStart = true;
     private boolean startupPhotoDisplayed;
@@ -2432,6 +2436,7 @@ public final class PhotoClockActivity extends Activity {
             return;
         }
         photoPanReverse = !photoPanReverse;
+        lastPhotoPanFrameAt = 0L;
         photoPanAnimator = android.animation.ValueAnimator.ofFloat(0.0f, 1.0f);
         photoPanAnimator.setDuration(photoPanDurationMs);
         photoPanAnimator.setInterpolator(new android.view.animation.LinearInterpolator());
@@ -2442,7 +2447,15 @@ public final class PhotoClockActivity extends Activity {
                     animation.cancel();
                     return;
                 }
-                applyPhotoPan((Float) animation.getAnimatedValue());
+                float progress = (Float) animation.getAnimatedValue();
+                long now = SystemClock.uptimeMillis();
+                // Always render the final progress so a completed pan never leaves
+                // the image one throttled frame behind.
+                if (progress < 1.0f && now - lastPhotoPanFrameAt < photoPanFrameIntervalMs()) {
+                    return;
+                }
+                lastPhotoPanFrameAt = now;
+                applyPhotoPan(progress);
             }
         });
         photoPanAnimator.start();
@@ -2452,6 +2465,13 @@ public final class PhotoClockActivity extends Activity {
         if (photoPanAnimator != null) {
             photoPanAnimator.cancel();
         }
+        lastPhotoPanFrameAt = 0L;
+    }
+
+    private long photoPanFrameIntervalMs() {
+        // Android 4.2-era devices are the primary low-power target for this branch.
+        return Build.VERSION.SDK_INT < 19
+                ? PHOTO_PAN_OLD_DEVICE_FRAME_MS : PHOTO_PAN_FRAME_MS;
     }
 
     private void safeRecycle(Bitmap bitmap) {
