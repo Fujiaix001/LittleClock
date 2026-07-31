@@ -62,6 +62,8 @@ public final class SettingsActivity extends Activity {
     public static final String CLOCK_Y_RATIO = "clock_y_ratio";
     public static final String CLOCK_TIME_ENABLED = "clock_time_enabled";
     public static final String CLOCK_DATE_ENABLED = "clock_date_enabled";
+    public static final String CLOCK_SIZES_LINKED = "clock_sizes_linked";
+    public static final String CLOCK_FREE_LAYOUT_ENABLED = "clock_free_layout_enabled";
     public static final String CLOCK_BACKGROUND_ENABLED = "clock_bg_enabled";
     public static final String CLOCK_FONT_STYLE = "clock_font_style";
     public static final String CLOCK_FONT_ID = "clock_font_id";
@@ -116,6 +118,8 @@ public final class SettingsActivity extends Activity {
     private int selectedInterval;
     private boolean clockTimeEnabled = true;
     private boolean clockDateEnabled = true;
+    private boolean clockSizesLinked = true;
+    private boolean clockFreeLayoutEnabled;
     private boolean clockBgEnabled;
     private int selectedFontStyle;
     private String selectedFontId;
@@ -165,6 +169,8 @@ public final class SettingsActivity extends Activity {
     private CheckBox nightModeCheck;
     private CheckBox clockTimeCheck;
     private CheckBox clockDateCheck;
+    private CheckBox clockSizesLinkedCheck;
+    private CheckBox clockFreeLayoutCheck;
     private CheckBox clockBgCheck;
     private CheckBox adaptiveColorCheck;
     private CheckBox polaroidFrameCheck;
@@ -221,6 +227,8 @@ public final class SettingsActivity extends Activity {
                 prefs.getInt(PHOTO_INTERVAL_SECONDS, DEFAULT_INTERVAL_SECONDS));
         clockTimeEnabled = prefs.getBoolean(CLOCK_TIME_ENABLED, true);
         clockDateEnabled = prefs.getBoolean(CLOCK_DATE_ENABLED, true);
+        clockSizesLinked = prefs.getBoolean(CLOCK_SIZES_LINKED, true);
+        clockFreeLayoutEnabled = prefs.getBoolean(CLOCK_FREE_LAYOUT_ENABLED, false);
         clockBgEnabled = prefs.getBoolean(CLOCK_BACKGROUND_ENABLED, false);
         selectedFontStyle = prefs.getInt(CLOCK_FONT_STYLE, 0);
         String defaultFont = BuildConfig.INCLUDE_STOROPIA ? "asset:font_storopia.ttf" : "asset:font_oxanium.ttf";
@@ -719,7 +727,16 @@ public final class SettingsActivity extends Activity {
         clockDateCheck = checkBox("顯示日期", clockDateEnabled);
         mainSection.addView(clockDateCheck);
 
-        clockBgCheck = checkBox("時間底板", clockBgEnabled);
+        clockSizesLinkedCheck = checkBox("綁定時間、日期、天氣大小", clockSizesLinked);
+        mainSection.addView(clockSizesLinkedCheck);
+
+        clockFreeLayoutCheck = checkBox("自由配置時間、日期、天氣位置", clockFreeLayoutEnabled);
+        mainSection.addView(clockFreeLayoutCheck);
+        TextView freeLayoutHint = text("自由模式：長按單元拖曳，雙指調整大小", 13, SECONDARY);
+        freeLayoutHint.setPadding(dp(12), 0, dp(8), dp(4));
+        mainSection.addView(freeLayoutHint);
+
+        clockBgCheck = checkBox("顯示資訊底板", clockBgEnabled);
         mainSection.addView(clockBgCheck);
 
         addDivider(mainSection);
@@ -1601,6 +1618,8 @@ public final class SettingsActivity extends Activity {
                 .putInt(PHOTO_INTERVAL_SECONDS, selectedInterval)
                 .putBoolean(CLOCK_TIME_ENABLED, clockTimeCheck.isChecked())
                 .putBoolean(CLOCK_DATE_ENABLED, clockDateCheck.isChecked())
+                .putBoolean(CLOCK_SIZES_LINKED, clockSizesLinkedCheck.isChecked())
+                .putBoolean(CLOCK_FREE_LAYOUT_ENABLED, clockFreeLayoutCheck.isChecked())
                 .putBoolean(CLOCK_BACKGROUND_ENABLED, clockBgCheck.isChecked())
                 .putString(CLOCK_FONT_ID, selectedFontId)
                 .putString(DATE_FONT_ID, selectedDateFontId)

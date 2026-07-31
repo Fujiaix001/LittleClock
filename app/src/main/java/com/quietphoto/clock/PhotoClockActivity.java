@@ -84,6 +84,19 @@ public final class PhotoClockActivity extends Activity {
     private static final String CLOCK_POS_X_RATIO = "clock_pos_x_ratio";
     private static final String CLOCK_POS_Y_RATIO = "clock_pos_y_ratio";
     public static final String CLOCK_SCALE_FACTOR = "clock_scale_factor";
+    private static final String CLOCK_TIME_SCALE_FACTOR = "clock_time_scale_factor";
+    private static final String CLOCK_DATE_SCALE_FACTOR = "clock_date_scale_factor";
+    private static final String CLOCK_WEATHER_SCALE_FACTOR = "clock_weather_scale_factor";
+    private static final String CLOCK_FREE_TIME_X_RATIO = "clock_free_time_x_ratio";
+    private static final String CLOCK_FREE_TIME_Y_RATIO = "clock_free_time_y_ratio";
+    private static final String CLOCK_FREE_DATE_X_RATIO = "clock_free_date_x_ratio";
+    private static final String CLOCK_FREE_DATE_Y_RATIO = "clock_free_date_y_ratio";
+    private static final String CLOCK_FREE_WEATHER_X_RATIO = "clock_free_weather_x_ratio";
+    private static final String CLOCK_FREE_WEATHER_Y_RATIO = "clock_free_weather_y_ratio";
+    private static final int SCALE_TARGET_NONE = 0;
+    private static final int SCALE_TARGET_TIME = 1;
+    private static final int SCALE_TARGET_DATE = 2;
+    private static final int SCALE_TARGET_WEATHER = 3;
     private static final String LAST_PHOTO_KEY = "last_photo_key";
     private static final String PHOTO_DIRECTORY = "QuietPanel/Photos";
     private static final int MAX_PHOTO_FILES = 50000;
@@ -234,10 +247,39 @@ public final class PhotoClockActivity extends Activity {
     private float clockStartTransX;
     private float clockStartTransY;
     private float clockScaleFactor = 1.0f;
+    // These are always effective on-screen scales.  Linked mode changes all three together.
+    private float timeScaleFactor = 1.0f;
+    private float dateScaleFactor = 1.0f;
+    private float weatherScaleFactor = 1.0f;
+    private boolean clockSizesLinked = true;
+    private boolean clockFreeLayoutEnabled;
+    private int activeScaleTarget = SCALE_TARGET_NONE;
+    private int freeClockTouchTarget = SCALE_TARGET_NONE;
+    private boolean freeClockLongPressPending;
+    private boolean freeClockDragging;
+    private float freeClockDownRawX;
+    private float freeClockDownRawY;
+    private float freeClockDragStartX;
+    private float freeClockDragStartY;
+    private float timeFreeTranslationX;
+    private float timeFreeTranslationY;
+    private float dateFreeTranslationX;
+    private float dateFreeTranslationY;
+    private float weatherFreeTranslationX;
+    private float weatherFreeTranslationY;
     private float clockBaseTranslationX;
     private float clockBaseTranslationY;
     private float burnInOffsetX;
     private float burnInOffsetY;
+    // Reused on the UI thread so drag hit-testing and boundary clamping stay allocation-free.
+    private final float[] clockBoundsScratch = new float[4];
+    private final float[] previousClockBoundsScratch = new float[4];
+    private final float[] clockChildBoundsScratch = new float[4];
+    private final float[] dateRowBoundsScratch = new float[4];
+    private final float[] scaleFocusScratch = new float[2];
+    private final int[] rootScreenLocationScratch = new int[2];
+    private float motionEventScreenOffsetX;
+    private float motionEventScreenOffsetY;
     private ScaleGestureDetector scaleGestureDetector;
     private GestureDetector photoGestureDetector;
     private boolean photoActionLongPressPending;
@@ -249,6 +291,18 @@ public final class PhotoClockActivity extends Activity {
             if (!photoActionLongPressPending || pomodoroModeLayoutActive || photoLoading) return;
             photoActionLongPressPending = false;
             showPhotoActions();
+        }
+    };
+    private final Runnable freeClockLongPressRunnable = new Runnable() {
+        @Override
+        public void run() {
+            if (!freeClockLongPressPending || !clockFreeLayoutEnabled
+                    || freeClockTouchTarget == SCALE_TARGET_NONE || isScalingClock) {
+                return;
+            }
+            freeClockLongPressPending = false;
+            freeClockDragging = true;
+            setFreeClockTargetAlpha(freeClockTouchTarget, 0.75f);
         }
     };
     private final Random random = new Random();
@@ -535,6 +589,7 @@ public final class PhotoClockActivity extends Activity {
             String xKey = CLOCK_POS_X_RATIO + orientation;
             String yKey = CLOCK_POS_Y_RATIO + orientation;
             String scaleKey = CLOCK_SCALE_FACTOR + orientation;
+            float orientationScale = prefs.getFloat(scaleKey, legacyScale);
             if (!prefs.contains(xKey)) {
                 editor.putFloat(xKey, legacyX);
                 changed = true;
@@ -545,6 +600,18 @@ public final class PhotoClockActivity extends Activity {
             }
             if (!prefs.contains(scaleKey)) {
                 editor.putFloat(scaleKey, legacyScale);
+                changed = true;
+            }
+            if (!prefs.contains(CLOCK_TIME_SCALE_FACTOR + orientation)) {
+                editor.putFloat(CLOCK_TIME_SCALE_FACTOR + orientation, orientationScale);
+                changed = true;
+            }
+            if (!prefs.contains(CLOCK_DATE_SCALE_FACTOR + orientation)) {
+                editor.putFloat(CLOCK_DATE_SCALE_FACTOR + orientation, orientationScale);
+                changed = true;
+            }
+            if (!prefs.contains(CLOCK_WEATHER_SCALE_FACTOR + orientation)) {
+                editor.putFloat(CLOCK_WEATHER_SCALE_FACTOR + orientation, orientationScale);
                 changed = true;
             }
         }
@@ -572,6 +639,7 @@ public final class PhotoClockActivity extends Activity {
             @Override
             public void run() {
                 restoreClockPosition();
+                restoreFreeClockTranslations();
             }
         });
     }
@@ -579,6 +647,7 @@ public final class PhotoClockActivity extends Activity {
     @Override
     protected void onPause() {
         cancelPhotoActionLongPress();
+        cancelFreeClockInteraction(false);
         if (currentPhotoSource != null) {
             prefs.edit().putString(LAST_PHOTO_KEY, currentPhotoSource.key()).apply();
         }
@@ -603,6 +672,7 @@ public final class PhotoClockActivity extends Activity {
     @Override
     protected void onDestroy() {
         cancelPhotoActionLongPress();
+        cancelFreeClockInteraction(false);
         photoHandler.removeCallbacks(hideImmersiveRunnable);
         photoHandler.removeCallbacks(hideGestureHintRunnable);
         photoHandler.removeCallbacks(burnInRunnable);
@@ -631,9 +701,7 @@ public final class PhotoClockActivity extends Activity {
     @Override
     public void onConfigurationChanged(Configuration newConfig) {
         super.onConfigurationChanged(newConfig);
-        clockScaleFactor = prefs.getFloat(
-                orientationKey(CLOCK_SCALE_FACTOR),
-                1.0f);
+        loadClockScalePreferences();
         applyClockScale();
         if (photoImage != null && photoBitmap != null) {
             applyPhotoPresentation(photoBitmap);
@@ -646,6 +714,7 @@ public final class PhotoClockActivity extends Activity {
                         applyPomodoroFocusLayout();
                     } else {
                         restoreClockPosition();
+                        restoreFreeClockTranslations();
                     }
                 }
             });
@@ -753,8 +822,20 @@ public final class PhotoClockActivity extends Activity {
             return true;
         }
         handlePhotoActionLongPress(event);
+        if (event != null) {
+            // ScaleGestureDetector reports window coordinates; keep the exact window-to-screen
+            // offset from this event instead of inferring it from a transformed root view.
+            motionEventScreenOffsetX = event.getRawX() - event.getX();
+            motionEventScreenOffsetY = event.getRawY() - event.getY();
+            if (event.getActionMasked() == MotionEvent.ACTION_POINTER_DOWN) {
+                cancelClockDragForMultiTouch();
+            }
+        }
         if (scaleGestureDetector != null) {
             scaleGestureDetector.onTouchEvent(event);
+        }
+        if (clockFreeLayoutEnabled && handleFreeClockTouch(event)) {
+            return true;
         }
         if (photoGestureDetector != null && event.getPointerCount() == 1
                 && !isDraggingClock && !isScalingClock) {
@@ -862,17 +943,239 @@ public final class PhotoClockActivity extends Activity {
         if (clockPanel == null || event == null) {
             return false;
         }
-        int[] location = new int[2];
-        clockPanel.getLocationOnScreen(location);
-        float x = event.getRawX();
-        float y = event.getRawY();
-        float scaleX = clockPanel.getScaleX();
-        float scaleY = clockPanel.getScaleY();
-        float left = location[0] + clockPanel.getPivotX() * (1.0f - scaleX);
-        float top = location[1] + clockPanel.getPivotY() * (1.0f - scaleY);
-        float right = left + clockPanel.getWidth() * scaleX;
-        float bottom = top + clockPanel.getHeight() * scaleY;
-        return x >= left && x <= right && y >= top && y <= bottom;
+        if (clockFreeLayoutEnabled) {
+            return findScaleTarget(event.getRawX(), event.getRawY()) != SCALE_TARGET_NONE;
+        }
+        return isPointOnClock(event.getRawX(), event.getRawY());
+    }
+
+    private boolean isPointOnClock(float rawX, float rawY) {
+        if (!getClockVisualBounds(clockBoundsScratch) || rootContainer == null) return false;
+        rootContainer.getLocationOnScreen(rootScreenLocationScratch);
+        return rawX >= rootScreenLocationScratch[0] + clockBoundsScratch[0]
+                && rawX <= rootScreenLocationScratch[0] + clockBoundsScratch[2]
+                && rawY >= rootScreenLocationScratch[1] + clockBoundsScratch[1]
+                && rawY <= rootScreenLocationScratch[1] + clockBoundsScratch[3];
+    }
+
+    private float[] getScaleFocusOnScreen(ScaleGestureDetector detector) {
+        scaleFocusScratch[0] = motionEventScreenOffsetX + detector.getFocusX();
+        scaleFocusScratch[1] = motionEventScreenOffsetY + detector.getFocusY();
+        return scaleFocusScratch;
+    }
+
+    private int findScaleTarget(float rawX, float rawY) {
+        if (clockFreeLayoutEnabled) {
+            // Match the LinearLayout drawing order. When units overlap, the visible
+            // top unit is selected first and can be dragged away to reveal the next.
+            if (isPointOnClockChild(weatherRow, rawX, rawY)) return SCALE_TARGET_WEATHER;
+            if (isPointOnClockChild(dateRow, rawX, rawY)) return SCALE_TARGET_DATE;
+            if (isPointOnClockChild(photoTime, rawX, rawY)) return SCALE_TARGET_TIME;
+            return SCALE_TARGET_NONE;
+        }
+        if (isPointOnClockChild(photoTime, rawX, rawY)) return SCALE_TARGET_TIME;
+        if (isPointOnClockNestedChild(compactWeatherRow, rawX, rawY)) return SCALE_TARGET_WEATHER;
+        if (isPointOnClockNestedChild(photoDate, rawX, rawY)) return SCALE_TARGET_DATE;
+        if (isPointOnClockChild(weatherRow, rawX, rawY)) return SCALE_TARGET_WEATHER;
+        return SCALE_TARGET_NONE;
+    }
+
+    /**
+     * Android 4.2 can report a scale focus a few pixels away from a transformed child.
+     * Prefer the closest visible clock part instead of falling through to whole-clock drag.
+     */
+    private int findNearestScaleTarget(float rawX, float rawY) {
+        if (rootContainer == null) return SCALE_TARGET_NONE;
+        rootContainer.getLocationOnScreen(rootScreenLocationScratch);
+        float bestDistance = Float.MAX_VALUE;
+        int target = SCALE_TARGET_NONE;
+
+        if (getClockChildVisualBounds(photoTime, clockBoundsScratch)) {
+            bestDistance = distanceSquaredToScreenBounds(rawX, rawY);
+            target = SCALE_TARGET_TIME;
+        }
+        boolean hasDateBounds = clockFreeLayoutEnabled
+                ? getClockChildVisualBounds(dateRow, clockBoundsScratch)
+                : getClockNestedChildVisualBounds(photoDate, clockBoundsScratch);
+        if (hasDateBounds) {
+            float distance = distanceSquaredToScreenBounds(rawX, rawY);
+            if (distance < bestDistance) {
+                bestDistance = distance;
+                target = SCALE_TARGET_DATE;
+            }
+        }
+        if (!clockFreeLayoutEnabled
+                && getClockNestedChildVisualBounds(compactWeatherRow, clockBoundsScratch)) {
+            float distance = distanceSquaredToScreenBounds(rawX, rawY);
+            if (distance < bestDistance) {
+                bestDistance = distance;
+                target = SCALE_TARGET_WEATHER;
+            }
+        }
+        if (getClockChildVisualBounds(weatherRow, clockBoundsScratch)) {
+            float distance = distanceSquaredToScreenBounds(rawX, rawY);
+            if (distance < bestDistance) {
+                bestDistance = distance;
+                target = SCALE_TARGET_WEATHER;
+            }
+        }
+        float maximumDistance = dp(48);
+        return bestDistance <= maximumDistance * maximumDistance ? target : SCALE_TARGET_NONE;
+    }
+
+    private float distanceSquaredToScreenBounds(float rawX, float rawY) {
+        float left = rootScreenLocationScratch[0] + clockBoundsScratch[0];
+        float top = rootScreenLocationScratch[1] + clockBoundsScratch[1];
+        float right = rootScreenLocationScratch[0] + clockBoundsScratch[2];
+        float bottom = rootScreenLocationScratch[1] + clockBoundsScratch[3];
+        float deltaX = rawX < left ? left - rawX : rawX > right ? rawX - right : 0.0f;
+        float deltaY = rawY < top ? top - rawY : rawY > bottom ? rawY - bottom : 0.0f;
+        return deltaX * deltaX + deltaY * deltaY;
+    }
+
+    private boolean isPointOnClockChild(View child, float rawX, float rawY) {
+        if (!getClockChildVisualBounds(child, clockBoundsScratch) || rootContainer == null) return false;
+        rootContainer.getLocationOnScreen(rootScreenLocationScratch);
+        return rawX >= rootScreenLocationScratch[0] + clockBoundsScratch[0]
+                && rawX <= rootScreenLocationScratch[0] + clockBoundsScratch[2]
+                && rawY >= rootScreenLocationScratch[1] + clockBoundsScratch[1]
+                && rawY <= rootScreenLocationScratch[1] + clockBoundsScratch[3];
+    }
+
+    private boolean isPointOnClockNestedChild(View child, float rawX, float rawY) {
+        if (!getClockNestedChildVisualBounds(child, clockBoundsScratch) || rootContainer == null) return false;
+        rootContainer.getLocationOnScreen(rootScreenLocationScratch);
+        return rawX >= rootScreenLocationScratch[0] + clockBoundsScratch[0]
+                && rawX <= rootScreenLocationScratch[0] + clockBoundsScratch[2]
+                && rawY >= rootScreenLocationScratch[1] + clockBoundsScratch[1]
+                && rawY <= rootScreenLocationScratch[1] + clockBoundsScratch[3];
+    }
+
+    /** Writes the visual bounds in rootContainer coordinates, including property transforms. */
+    private boolean getClockVisualBounds(float[] outBounds) {
+        if (clockPanel == null || outBounds == null || outBounds.length < 4) return false;
+        boolean hasVisibleChild = false;
+        float left = Float.MAX_VALUE;
+        float top = Float.MAX_VALUE;
+        float right = -Float.MAX_VALUE;
+        float bottom = -Float.MAX_VALUE;
+        for (int i = 0; i < clockPanel.getChildCount(); i++) {
+            if (!getClockChildVisualBounds(clockPanel.getChildAt(i), clockChildBoundsScratch)) continue;
+            hasVisibleChild = true;
+            left = Math.min(left, clockChildBoundsScratch[0]);
+            top = Math.min(top, clockChildBoundsScratch[1]);
+            right = Math.max(right, clockChildBoundsScratch[2]);
+            bottom = Math.max(bottom, clockChildBoundsScratch[3]);
+        }
+        if (!hasVisibleChild) return false;
+        outBounds[0] = left;
+        outBounds[1] = top;
+        outBounds[2] = right;
+        outBounds[3] = bottom;
+        return true;
+    }
+
+    private boolean getClockChildVisualBounds(View child, float[] outBounds) {
+        if (clockPanel == null || child == null || child.getVisibility() == View.GONE
+                || outBounds == null || outBounds.length < 4) {
+            return false;
+        }
+        if (child == dateRow) {
+            if (!getDateRowLocalVisualBounds(dateRowBoundsScratch)) return false;
+            float rowScaleX = dateRow.getScaleX();
+            float rowScaleY = dateRow.getScaleY();
+            float rowLeft = dateRow.getLeft() + dateRow.getTranslationX()
+                    + dateRow.getPivotX() * (1.0f - rowScaleX) + dateRowBoundsScratch[0] * rowScaleX;
+            float rowTop = dateRow.getTop() + dateRow.getTranslationY()
+                    + dateRow.getPivotY() * (1.0f - rowScaleY) + dateRowBoundsScratch[1] * rowScaleY;
+            float rowRight = dateRow.getLeft() + dateRow.getTranslationX()
+                    + dateRow.getPivotX() * (1.0f - rowScaleX) + dateRowBoundsScratch[2] * rowScaleX;
+            float rowBottom = dateRow.getTop() + dateRow.getTranslationY()
+                    + dateRow.getPivotY() * (1.0f - rowScaleY) + dateRowBoundsScratch[3] * rowScaleY;
+            mapClockPanelBounds(rowLeft, rowTop, rowRight, rowBottom, outBounds);
+            return true;
+        }
+        float childScaleX = child.getScaleX();
+        float childScaleY = child.getScaleY();
+        float childLeft = child.getLeft() + child.getTranslationX()
+                + child.getPivotX() * (1.0f - childScaleX);
+        float childTop = child.getTop() + child.getTranslationY()
+                + child.getPivotY() * (1.0f - childScaleY);
+        float childRight = childLeft + child.getWidth() * childScaleX;
+        float childBottom = childTop + child.getHeight() * childScaleY;
+        mapClockPanelBounds(childLeft, childTop, childRight, childBottom, outBounds);
+        return true;
+    }
+
+    private boolean getClockNestedChildVisualBounds(View child, float[] outBounds) {
+        if (dateRow == null || child == null || child.getParent() != dateRow
+                || child.getVisibility() == View.GONE || outBounds == null || outBounds.length < 4) {
+            return false;
+        }
+        float scaleX = child.getScaleX();
+        float scaleY = child.getScaleY();
+        float rowScaleX = dateRow.getScaleX();
+        float rowScaleY = dateRow.getScaleY();
+        float childLeft = child.getLeft() + child.getTranslationX()
+                + child.getPivotX() * (1.0f - scaleX);
+        float childTop = child.getTop() + child.getTranslationY()
+                + child.getPivotY() * (1.0f - scaleY);
+        float rowLeft = dateRow.getLeft() + dateRow.getTranslationX()
+                + dateRow.getPivotX() * (1.0f - rowScaleX) + childLeft * rowScaleX;
+        float rowTop = dateRow.getTop() + dateRow.getTranslationY()
+                + dateRow.getPivotY() * (1.0f - rowScaleY) + childTop * rowScaleY;
+        mapClockPanelBounds(rowLeft, rowTop,
+                rowLeft + child.getWidth() * scaleX * rowScaleX,
+                rowTop + child.getHeight() * scaleY * rowScaleY, outBounds);
+        return true;
+    }
+
+    private boolean getDateRowLocalVisualBounds(float[] outBounds) {
+        if (dateRow == null || outBounds == null || outBounds.length < 4) return false;
+        boolean hasVisibleChild = false;
+        float left = Float.MAX_VALUE;
+        float top = Float.MAX_VALUE;
+        float right = -Float.MAX_VALUE;
+        float bottom = -Float.MAX_VALUE;
+        for (int i = 0; i < dateRow.getChildCount(); i++) {
+            View child = dateRow.getChildAt(i);
+            if (child.getVisibility() == View.GONE) continue;
+            float scaleX = child.getScaleX();
+            float scaleY = child.getScaleY();
+            float childLeft = child.getLeft() + child.getTranslationX()
+                    + child.getPivotX() * (1.0f - scaleX);
+            float childTop = child.getTop() + child.getTranslationY()
+                    + child.getPivotY() * (1.0f - scaleY);
+            hasVisibleChild = true;
+            left = Math.min(left, childLeft);
+            top = Math.min(top, childTop);
+            right = Math.max(right, childLeft + child.getWidth() * scaleX);
+            bottom = Math.max(bottom, childTop + child.getHeight() * scaleY);
+        }
+        if (!hasVisibleChild) return false;
+        outBounds[0] = left;
+        outBounds[1] = top;
+        outBounds[2] = right;
+        outBounds[3] = bottom;
+        return true;
+    }
+
+    private void mapClockPanelBounds(float childLeft, float childTop, float childRight,
+            float childBottom, float[] outBounds) {
+        float panelOriginX = clockPanel.getLeft() + clockPanel.getTranslationX();
+        float panelOriginY = clockPanel.getTop() + clockPanel.getTranslationY();
+        float panelPivotX = clockPanel.getPivotX();
+        float panelPivotY = clockPanel.getPivotY();
+        float panelScaleX = clockPanel.getScaleX();
+        float panelScaleY = clockPanel.getScaleY();
+        outBounds[0] = panelOriginX + panelPivotX
+                + (childLeft - panelPivotX) * panelScaleX;
+        outBounds[1] = panelOriginY + panelPivotY
+                + (childTop - panelPivotY) * panelScaleY;
+        outBounds[2] = panelOriginX + panelPivotX
+                + (childRight - panelPivotX) * panelScaleX;
+        outBounds[3] = panelOriginY + panelPivotY
+                + (childBottom - panelPivotY) * panelScaleY;
     }
 
     private void showPhotoActions() {
@@ -1130,9 +1433,7 @@ public final class PhotoClockActivity extends Activity {
         weatherLocationName = prefs.getString(SettingsActivity.WEATHER_LOCATION_NAME, "");
         weatherLatitude = parseDouble(prefs.getString(SettingsActivity.WEATHER_LATITUDE, null));
         weatherLongitude = parseDouble(prefs.getString(SettingsActivity.WEATHER_LONGITUDE, null));
-        clockScaleFactor = prefs.getFloat(
-                orientationKey(CLOCK_SCALE_FACTOR),
-                0.75f);
+        loadClockScalePreferences();
 
         favoritePhotos.clear();
         hiddenPhotos.clear();
@@ -1144,6 +1445,19 @@ public final class PhotoClockActivity extends Activity {
         applyPolaroidStyle();
         updateClockStyle();
         applyClockScale();
+    }
+
+    private void loadClockScalePreferences() {
+        clockSizesLinked = prefs.getBoolean(SettingsActivity.CLOCK_SIZES_LINKED, true);
+        clockFreeLayoutEnabled = prefs.getBoolean(
+                SettingsActivity.CLOCK_FREE_LAYOUT_ENABLED, false);
+        clockScaleFactor = prefs.getFloat(orientationKey(CLOCK_SCALE_FACTOR), 0.75f);
+        timeScaleFactor = prefs.getFloat(
+                orientationKey(CLOCK_TIME_SCALE_FACTOR), clockScaleFactor);
+        dateScaleFactor = prefs.getFloat(
+                orientationKey(CLOCK_DATE_SCALE_FACTOR), clockScaleFactor);
+        weatherScaleFactor = prefs.getFloat(
+                orientationKey(CLOCK_WEATHER_SCALE_FACTOR), clockScaleFactor);
     }
 
     private void applyPolaroidStyle() {
@@ -1270,24 +1584,50 @@ public final class PhotoClockActivity extends Activity {
         if (pomodoroText != null) pomodoroText.setTypeface(clockTypeface);
         updatePhotoClock();
 
-        if (clockBgEnabled) {
-            GradientDrawable bg = new GradientDrawable();
-            int bgColor = isAdaptiveColorActive() ?
-                    Color.argb(85, Color.red(currentDominantColor), Color.green(currentDominantColor), Color.blue(currentDominantColor)) :
-                    Color.argb(65, 0, 0, 0);
-            bg.setColor(bgColor);
-            bg.setCornerRadius(dp(10));
-            clockPanel.setBackground(bg);
-            clockPanel.setPadding(dp(12), dp(4), dp(12), dp(6));
-        } else {
+        int bgColor = isAdaptiveColorActive()
+                ? Color.argb(85, Color.red(currentDominantColor),
+                        Color.green(currentDominantColor), Color.blue(currentDominantColor))
+                : Color.argb(65, 0, 0, 0);
+        if (clockFreeLayoutEnabled) {
             clockPanel.setBackground(null);
             clockPanel.setPadding(0, 0, 0, 0);
+            setFreeUnitBackground(photoTime, clockBgEnabled, bgColor);
+            setFreeUnitBackground(dateRow, clockBgEnabled, bgColor);
+            setFreeUnitBackground(weatherRow, clockBgEnabled, bgColor);
+        } else {
+            setFreeUnitBackground(photoTime, false, bgColor);
+            setFreeUnitBackground(dateRow, false, bgColor);
+            setFreeUnitBackground(weatherRow, false, bgColor);
+            if (clockBgEnabled) {
+                clockPanel.setBackground(newClockBackground(bgColor));
+                clockPanel.setPadding(dp(12), dp(4), dp(12), dp(6));
+            } else {
+                clockPanel.setBackground(null);
+                clockPanel.setPadding(0, 0, 0, 0);
+            }
         }
+    }
+
+    private GradientDrawable newClockBackground(int color) {
+        GradientDrawable background = new GradientDrawable();
+        background.setColor(color);
+        background.setCornerRadius(dp(10));
+        return background;
+    }
+
+    private void setFreeUnitBackground(View unit, boolean enabled, int color) {
+        if (unit == null) return;
+        unit.setBackground(enabled ? newClockBackground(color) : null);
+        int horizontal = enabled ? dp(8) : 0;
+        int vertical = enabled ? dp(4) : 0;
+        unit.setPadding(horizontal, vertical, horizontal, vertical);
     }
 
     private View buildInterface() {
         rootContainer = new FrameLayout(this);
         rootContainer.setBackgroundColor(BACKGROUND);
+        rootContainer.setClipChildren(false);
+        rootContainer.setClipToPadding(false);
         rootContainer.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
@@ -1333,6 +1673,15 @@ public final class PhotoClockActivity extends Activity {
         clockPanel = new AccessibleLinearLayout(this);
         clockPanel.setOrientation(LinearLayout.VERTICAL);
         clockPanel.setGravity(Gravity.CENTER_HORIZONTAL);
+        clockPanel.setClipChildren(false);
+        clockPanel.setClipToPadding(false);
+        clockPanel.addOnLayoutChangeListener(new View.OnLayoutChangeListener() {
+            @Override
+            public void onLayoutChange(View view, int left, int top, int right, int bottom,
+                    int oldLeft, int oldTop, int oldRight, int oldBottom) {
+                applyClockScale();
+            }
+        });
 
         photoTime = new TextView(this);
         photoTime.setTextSize(64);
@@ -1348,6 +1697,8 @@ public final class PhotoClockActivity extends Activity {
         dateRow = new LinearLayout(this);
         dateRow.setOrientation(LinearLayout.HORIZONTAL);
         dateRow.setGravity(Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
+        dateRow.setClipChildren(false);
+        dateRow.setClipToPadding(false);
 
         photoDate = new TextView(this);
         photoDate.setTextSize(24);
@@ -1829,19 +2180,275 @@ public final class PhotoClockActivity extends Activity {
     }
 
     private void applyClockScale() {
-        if (clockPanel != null) {
-            clockPanel.setPivotX(clockPanel.getWidth() / 2f);
-            clockPanel.setPivotY(clockPanel.getHeight() / 2f);
-            float displayScale = pomodoroModeLayoutActive ? 1.0f : clockScaleFactor;
-            clockPanel.setScaleX(displayScale);
-            clockPanel.setScaleY(displayScale);
+        if (clockPanel == null) return;
+        boolean freeTargetChange = clockFreeLayoutEnabled
+                && activeScaleTarget != SCALE_TARGET_NONE;
+        boolean hadPreviousBounds = freeTargetChange
+                ? getFreeClockTargetVisualBounds(
+                        activeScaleTarget, previousClockBoundsScratch)
+                : captureClockVisualBounds(previousClockBoundsScratch);
+
+        clockPanel.setPivotX(clockPanel.getWidth() / 2f);
+        clockPanel.setPivotY(clockPanel.getHeight() / 2f);
+        if (pomodoroModeLayoutActive) {
+            clockPanel.setScaleX(1.0f);
+            clockPanel.setScaleY(1.0f);
+            resetClockComponentTransforms();
+            invalidateClockVisualChange(hadPreviousBounds);
+            return;
+        }
+
+        if (clockFreeLayoutEnabled) {
+            clockPanel.setScaleX(1.0f);
+            clockPanel.setScaleY(1.0f);
+            applyComponentScale(photoTime, timeScaleFactor);
+            applyComponentScale(dateRow, dateScaleFactor);
+            applyComponentScale(weatherRow, weatherScaleFactor);
+            applyComponentScale(photoDate, 1.0f);
+            applyComponentScale(compactWeatherRow, 1.0f);
+            resetDateRowChildTranslations();
+            applyFreeClockTranslations();
+            if (freeTargetChange) {
+                invalidateFreeClockTargetVisualChange(
+                        activeScaleTarget, hadPreviousBounds);
+            } else {
+                invalidateClockVisualChange(hadPreviousBounds);
+            }
+            return;
+        }
+
+        // Preserve the legacy group behavior whenever every row has the same size.
+        boolean useWholePanelScale = clockSizesLinked && hasUniformClockScale();
+        float panelScale = useWholePanelScale ? timeScaleFactor : 1.0f;
+        float timeLocalScale = useWholePanelScale ? 1.0f : timeScaleFactor;
+        float dateLocalScale = useWholePanelScale ? 1.0f : dateScaleFactor;
+        float weatherLocalScale = useWholePanelScale ? 1.0f : weatherScaleFactor;
+        clockPanel.setScaleX(panelScale);
+        clockPanel.setScaleY(panelScale);
+        applyComponentScale(dateRow, 1.0f);
+        applyComponentScale(photoTime, timeLocalScale);
+        applyComponentScale(photoDate, dateLocalScale);
+        applyComponentScale(compactWeatherRow, weatherLocalScale);
+        applyComponentScale(weatherRow, weatherLocalScale);
+        resetFreeClockViewTranslations();
+        applyDateRowSpacingCompensation();
+        applyClockSpacingCompensation();
+        invalidateClockVisualChange(hadPreviousBounds);
+    }
+
+    private void resetDateRowChildTranslations() {
+        if (dateRow == null) return;
+        for (int i = 0; i < dateRow.getChildCount(); i++) {
+            View child = dateRow.getChildAt(i);
+            child.setTranslationX(0.0f);
+            child.setTranslationY(0.0f);
+        }
+    }
+
+    private void resetFreeClockViewTranslations() {
+        if (photoTime != null) photoTime.setTranslationX(0.0f);
+        if (dateRow != null) dateRow.setTranslationX(0.0f);
+        if (weatherRow != null) weatherRow.setTranslationX(0.0f);
+    }
+
+    private void applyFreeClockTranslations() {
+        if (photoTime != null) {
+            photoTime.setTranslationX(timeFreeTranslationX);
+            photoTime.setTranslationY(timeFreeTranslationY);
+        }
+        if (dateRow != null) {
+            dateRow.setTranslationX(dateFreeTranslationX);
+            dateRow.setTranslationY(dateFreeTranslationY);
+        }
+        if (weatherRow != null) {
+            weatherRow.setTranslationX(weatherFreeTranslationX);
+            weatherRow.setTranslationY(weatherFreeTranslationY);
+        }
+        if (pomodoroRow != null && pomodoroRow.getParent() == clockPanel) {
+            pomodoroRow.setTranslationX(0.0f);
+            pomodoroRow.setTranslationY(0.0f);
+        }
+    }
+
+    private boolean captureClockVisualBounds(float[] outBounds) {
+        return rootContainer != null && getClockVisualBounds(outBounds);
+    }
+
+    /**
+     * On Android 4.2, a transformed child that draws outside its layout bounds can leave
+     * old pixels behind when only the child is invalidated. Redraw the small union of its
+     * old and new visual rectangles instead of invalidating the full photo surface.
+     */
+    private void invalidateClockVisualChange(boolean hadPreviousBounds) {
+        if (rootContainer == null) return;
+        boolean hasCurrentBounds = getClockVisualBounds(clockBoundsScratch);
+        if (!hadPreviousBounds && !hasCurrentBounds) return;
+
+        float left = hasCurrentBounds ? clockBoundsScratch[0] : previousClockBoundsScratch[0];
+        float top = hasCurrentBounds ? clockBoundsScratch[1] : previousClockBoundsScratch[1];
+        float right = hasCurrentBounds ? clockBoundsScratch[2] : previousClockBoundsScratch[2];
+        float bottom = hasCurrentBounds ? clockBoundsScratch[3] : previousClockBoundsScratch[3];
+        if (hadPreviousBounds && hasCurrentBounds) {
+            left = Math.min(left, previousClockBoundsScratch[0]);
+            top = Math.min(top, previousClockBoundsScratch[1]);
+            right = Math.max(right, previousClockBoundsScratch[2]);
+            bottom = Math.max(bottom, previousClockBoundsScratch[3]);
+        }
+
+        int shadowPadding = dp(24);
+        int invalidLeft = Math.max(0, (int) Math.floor(left) - shadowPadding);
+        int invalidTop = Math.max(0, (int) Math.floor(top) - shadowPadding);
+        int invalidRight = Math.min(rootContainer.getWidth(), (int) Math.ceil(right) + shadowPadding);
+        int invalidBottom = Math.min(rootContainer.getHeight(), (int) Math.ceil(bottom) + shadowPadding);
+        if (invalidRight > invalidLeft && invalidBottom > invalidTop) {
+            rootContainer.invalidate(invalidLeft, invalidTop, invalidRight, invalidBottom);
         }
     }
 
     private void saveClockScaleFactor() {
         if (prefs != null) {
-            prefs.edit().putFloat(orientationKey(CLOCK_SCALE_FACTOR), clockScaleFactor).apply();
+            // Keep the legacy value in sync for upgrades and for older installations.
+            clockScaleFactor = timeScaleFactor;
+            prefs.edit()
+                    .putFloat(orientationKey(CLOCK_SCALE_FACTOR), clockScaleFactor)
+                    .putFloat(orientationKey(CLOCK_TIME_SCALE_FACTOR), timeScaleFactor)
+                    .putFloat(orientationKey(CLOCK_DATE_SCALE_FACTOR), dateScaleFactor)
+                    .putFloat(orientationKey(CLOCK_WEATHER_SCALE_FACTOR), weatherScaleFactor)
+                    .apply();
         }
+    }
+
+    private void applyComponentScale(View component, float scale) {
+        if (component == null) return;
+        component.setPivotX(component.getWidth() / 2f);
+        component.setPivotY(component.getHeight() / 2f);
+        component.setScaleX(scale);
+        component.setScaleY(scale);
+    }
+
+    private void resetClockComponentTransforms() {
+        if (clockPanel == null) return;
+        for (int i = 0; i < clockPanel.getChildCount(); i++) {
+            View child = clockPanel.getChildAt(i);
+            child.setScaleX(1.0f);
+            child.setScaleY(1.0f);
+            child.setTranslationY(0.0f);
+        }
+        if (dateRow != null) {
+            for (int i = 0; i < dateRow.getChildCount(); i++) {
+                View child = dateRow.getChildAt(i);
+                child.setScaleX(1.0f);
+                child.setScaleY(1.0f);
+                child.setTranslationX(0.0f);
+                child.setTranslationY(0.0f);
+            }
+        }
+    }
+
+    /**
+     * Property scaling does not change LinearLayout bounds.  Compensate only for the
+     * extra visual height, so no layout pass is needed while pinching.
+     */
+    private void applyClockSpacingCompensation() {
+        if (clockPanel == null) return;
+        float extraHeight = 0.0f;
+        for (int i = 0; i < clockPanel.getChildCount(); i++) {
+            View child = clockPanel.getChildAt(i);
+            if (child.getVisibility() != View.GONE) {
+                extraHeight += getClockChildBottomOverflow(child)
+                        - getClockChildTopOverflow(child);
+            }
+        }
+
+        float translationY = 0.0f;
+        boolean firstVisibleChild = true;
+        for (int i = 0; i < clockPanel.getChildCount(); i++) {
+            View child = clockPanel.getChildAt(i);
+            if (child.getVisibility() == View.GONE) {
+                child.setTranslationY(0.0f);
+                continue;
+            }
+            if (firstVisibleChild) {
+                translationY = -extraHeight / 2.0f - getClockChildTopOverflow(child);
+                firstVisibleChild = false;
+            }
+            child.setTranslationY(translationY);
+            translationY += getClockChildBottomOverflow(child);
+            for (int next = i + 1; next < clockPanel.getChildCount(); next++) {
+                View nextChild = clockPanel.getChildAt(next);
+                if (nextChild.getVisibility() != View.GONE) {
+                    translationY -= getClockChildTopOverflow(nextChild);
+                    break;
+                }
+            }
+        }
+    }
+
+    private void applyDateRowSpacingCompensation() {
+        if (dateRow == null) return;
+        float extraWidth = 0.0f;
+        for (int i = 0; i < dateRow.getChildCount(); i++) {
+            View child = dateRow.getChildAt(i);
+            if (child.getVisibility() != View.GONE) {
+                extraWidth += child.getWidth() * (child.getScaleX() - 1.0f);
+            }
+        }
+        float previousExtra = 0.0f;
+        for (int i = 0; i < dateRow.getChildCount(); i++) {
+            View child = dateRow.getChildAt(i);
+            if (child.getVisibility() == View.GONE) {
+                child.setTranslationX(0.0f);
+                continue;
+            }
+            float childExtra = child.getWidth() * (child.getScaleX() - 1.0f);
+            child.setTranslationX(-extraWidth / 2.0f + previousExtra + childExtra / 2.0f);
+            previousExtra += childExtra;
+        }
+    }
+
+    private float getClockChildTopOverflow(View child) {
+        if (child == dateRow) return getDateRowTopOverflow();
+        return child.getPivotY() * (1.0f - child.getScaleY());
+    }
+
+    private float getClockChildBottomOverflow(View child) {
+        if (child == dateRow) return getDateRowBottomOverflow();
+        return getClockChildTopOverflow(child) + child.getHeight() * child.getScaleY()
+                - child.getHeight();
+    }
+
+    private float getDateRowTopOverflow() {
+        if (dateRow == null) return 0.0f;
+        float top = 0.0f;
+        for (int i = 0; i < dateRow.getChildCount(); i++) {
+            View child = dateRow.getChildAt(i);
+            if (child.getVisibility() == View.GONE) continue;
+            top = Math.min(top, child.getTop() + child.getTranslationY()
+                    + child.getPivotY() * (1.0f - child.getScaleY()));
+        }
+        return top;
+    }
+
+    private float getDateRowBottomOverflow() {
+        if (dateRow == null) return 0.0f;
+        float bottom = dateRow.getHeight();
+        for (int i = 0; i < dateRow.getChildCount(); i++) {
+            View child = dateRow.getChildAt(i);
+            if (child.getVisibility() == View.GONE) continue;
+            float childTop = child.getTop() + child.getTranslationY()
+                    + child.getPivotY() * (1.0f - child.getScaleY());
+            bottom = Math.max(bottom, childTop + child.getHeight() * child.getScaleY());
+        }
+        return bottom - dateRow.getHeight();
+    }
+
+    private float clampClockScale(float scale) {
+        return Math.max(0.4f, Math.min(6.0f, scale));
+    }
+
+    private boolean hasUniformClockScale() {
+        return Math.abs(timeScaleFactor - dateScaleFactor) < 0.0001f
+                && Math.abs(timeScaleFactor - weatherScaleFactor) < 0.0001f;
     }
 
     private void setupClockDragAndDrop() {
@@ -1849,15 +2456,43 @@ public final class PhotoClockActivity extends Activity {
             @Override
             public boolean onScale(ScaleGestureDetector detector) {
                 float factor = detector.getScaleFactor();
-                clockScaleFactor *= factor;
-                clockScaleFactor = Math.max(0.4f, Math.min(6.0f, clockScaleFactor));
+                if (clockSizesLinked && !clockFreeLayoutEnabled) {
+                    timeScaleFactor = clampClockScale(timeScaleFactor * factor);
+                    dateScaleFactor = clampClockScale(dateScaleFactor * factor);
+                    weatherScaleFactor = clampClockScale(weatherScaleFactor * factor);
+                } else if (activeScaleTarget == SCALE_TARGET_TIME) {
+                    timeScaleFactor = clampClockScale(timeScaleFactor * factor);
+                } else if (activeScaleTarget == SCALE_TARGET_DATE) {
+                    dateScaleFactor = clampClockScale(dateScaleFactor * factor);
+                } else if (activeScaleTarget == SCALE_TARGET_WEATHER) {
+                    weatherScaleFactor = clampClockScale(weatherScaleFactor * factor);
+                }
                 applyClockScale();
+                if (clockFreeLayoutEnabled && activeScaleTarget != SCALE_TARGET_NONE) {
+                    setAndClampFreeClockTranslation(
+                            activeScaleTarget,
+                            getFreeClockTranslationX(activeScaleTarget),
+                            getFreeClockTranslationY(activeScaleTarget));
+                }
                 return true;
             }
 
             @Override
             public boolean onScaleBegin(ScaleGestureDetector detector) {
                 if (pomodoroModeLayoutActive) return false;
+                float[] focus = getScaleFocusOnScreen(detector);
+                activeScaleTarget = findScaleTarget(focus[0], focus[1]);
+                if (activeScaleTarget == SCALE_TARGET_NONE) {
+                    activeScaleTarget = findNearestScaleTarget(focus[0], focus[1]);
+                }
+                if (clockSizesLinked && !clockFreeLayoutEnabled) {
+                    if (activeScaleTarget == SCALE_TARGET_NONE && !isPointOnClock(focus[0], focus[1])) {
+                        return false;
+                    }
+                } else if (activeScaleTarget == SCALE_TARGET_NONE) {
+                    return false;
+                }
+                cancelClockDragForMultiTouch();
                 isScalingClock = true;
                 return true;
             }
@@ -1865,16 +2500,20 @@ public final class PhotoClockActivity extends Activity {
             @Override
             public void onScaleEnd(ScaleGestureDetector detector) {
                 isScalingClock = false;
-                saveClockScaleFactor();
+                if (activeScaleTarget != SCALE_TARGET_NONE || clockSizesLinked) {
+                    saveClockScaleFactor();
+                }
+                if (clockFreeLayoutEnabled) saveFreeClockTranslations();
+                activeScaleTarget = SCALE_TARGET_NONE;
             }
         });
 
         clockPanel.setOnLongClickListener(new View.OnLongClickListener() {
             @Override
             public boolean onLongClick(View view) {
-                if (!isScalingClock && !pomodoroModeLayoutActive) {
+                if (!clockFreeLayoutEnabled && !isScalingClock && !pomodoroModeLayoutActive) {
                     isDraggingClock = true;
-                    clockPanel.setAlpha(0.75f);
+                    setClockPanelAlpha(0.75f);
                     return true;
                 }
                 return false;
@@ -1900,7 +2539,7 @@ public final class PhotoClockActivity extends Activity {
                 if (event.getPointerCount() > 1 || isScalingClock) {
                     if (isDraggingClock) {
                         isDraggingClock = false;
-                        clockPanel.setAlpha(1.0f);
+                        setClockPanelAlpha(1.0f);
                     }
                     return true;
                 }
@@ -1933,7 +2572,7 @@ public final class PhotoClockActivity extends Activity {
                         if (isDraggingClock) {
                             isDraggingClock = false;
                             lastClockDragEndTime = SystemClock.elapsedRealtime();
-                            clockPanel.setAlpha(1.0f);
+                            setClockPanelAlpha(1.0f);
                             saveClockPositionRatio();
                             return true;
                         }
@@ -1942,6 +2581,284 @@ public final class PhotoClockActivity extends Activity {
                 return false;
             }
         });
+    }
+
+    private void cancelClockDragForMultiTouch() {
+        if (freeClockLongPressPending || freeClockDragging) {
+            cancelFreeClockInteraction(true);
+        }
+        if (isDraggingClock) {
+            isDraggingClock = false;
+            setClockPanelAlpha(1.0f);
+        }
+    }
+
+    private void setClockPanelAlpha(float alpha) {
+        if (clockPanel == null) return;
+        boolean hadPreviousBounds = captureClockVisualBounds(previousClockBoundsScratch);
+        clockPanel.setAlpha(alpha);
+        invalidateClockVisualChange(hadPreviousBounds);
+    }
+
+    private boolean handleFreeClockTouch(MotionEvent event) {
+        if (event == null || !clockFreeLayoutEnabled || pomodoroModeLayoutActive) return false;
+        int action = event.getActionMasked();
+        if (action == MotionEvent.ACTION_DOWN) {
+            int target = findScaleTarget(event.getRawX(), event.getRawY());
+            if (target == SCALE_TARGET_NONE) {
+                target = findNearestScaleTarget(event.getRawX(), event.getRawY());
+            }
+            if (target == SCALE_TARGET_NONE) return false;
+            freeClockTouchTarget = target;
+            freeClockDownRawX = event.getRawX();
+            freeClockDownRawY = event.getRawY();
+            freeClockDragStartX = getFreeClockTranslationX(target);
+            freeClockDragStartY = getFreeClockTranslationY(target);
+            freeClockLongPressPending = true;
+            photoHandler.removeCallbacks(freeClockLongPressRunnable);
+            photoHandler.postDelayed(
+                    freeClockLongPressRunnable, ViewConfiguration.getLongPressTimeout());
+            return true;
+        }
+
+        if (event.getPointerCount() > 1 || isScalingClock) {
+            cancelFreeClockInteraction(true);
+            return true;
+        }
+        if (freeClockTouchTarget == SCALE_TARGET_NONE) return false;
+
+        if (action == MotionEvent.ACTION_MOVE) {
+            float deltaX = event.getRawX() - freeClockDownRawX;
+            float deltaY = event.getRawY() - freeClockDownRawY;
+            if (freeClockLongPressPending) {
+                int touchSlop = ViewConfiguration.get(this).getScaledTouchSlop();
+                if (Math.abs(deltaX) > touchSlop || Math.abs(deltaY) > touchSlop) {
+                    freeClockLongPressPending = false;
+                    photoHandler.removeCallbacks(freeClockLongPressRunnable);
+                }
+            }
+            if (freeClockDragging) {
+                setAndClampFreeClockTranslation(
+                        freeClockTouchTarget,
+                        freeClockDragStartX + deltaX,
+                        freeClockDragStartY + deltaY);
+            }
+            return true;
+        }
+
+        if (action == MotionEvent.ACTION_UP) {
+            boolean wasDragging = freeClockDragging;
+            cancelFreeClockInteraction(wasDragging);
+            if (wasDragging) {
+                lastClockDragEndTime = SystemClock.elapsedRealtime();
+            } else if (rootContainer != null) {
+                rootContainer.performClick();
+            }
+            return true;
+        }
+        if (action == MotionEvent.ACTION_CANCEL) {
+            cancelFreeClockInteraction(freeClockDragging);
+            return true;
+        }
+        return true;
+    }
+
+    private void cancelFreeClockInteraction(boolean savePosition) {
+        photoHandler.removeCallbacks(freeClockLongPressRunnable);
+        freeClockLongPressPending = false;
+        if (freeClockDragging) {
+            setFreeClockTargetAlpha(freeClockTouchTarget, 1.0f);
+            if (savePosition) saveFreeClockTranslations();
+        }
+        freeClockDragging = false;
+        freeClockTouchTarget = SCALE_TARGET_NONE;
+    }
+
+    private View getFreeClockTargetView(int target) {
+        if (target == SCALE_TARGET_TIME) return photoTime;
+        if (target == SCALE_TARGET_DATE) return dateRow;
+        if (target == SCALE_TARGET_WEATHER) return weatherRow;
+        return null;
+    }
+
+    private void setFreeClockTargetAlpha(int target, float alpha) {
+        View targetView = getFreeClockTargetView(target);
+        if (targetView == null) return;
+        boolean hadPreviousBounds = getFreeClockTargetVisualBounds(
+                target, previousClockBoundsScratch);
+        targetView.setAlpha(alpha);
+        invalidateFreeClockTargetVisualChange(target, hadPreviousBounds);
+    }
+
+    private float getFreeClockTranslationX(int target) {
+        if (target == SCALE_TARGET_TIME) return timeFreeTranslationX;
+        if (target == SCALE_TARGET_DATE) return dateFreeTranslationX;
+        if (target == SCALE_TARGET_WEATHER) return weatherFreeTranslationX;
+        return 0.0f;
+    }
+
+    private float getFreeClockTranslationY(int target) {
+        if (target == SCALE_TARGET_TIME) return timeFreeTranslationY;
+        if (target == SCALE_TARGET_DATE) return dateFreeTranslationY;
+        if (target == SCALE_TARGET_WEATHER) return weatherFreeTranslationY;
+        return 0.0f;
+    }
+
+    private void setFreeClockTranslation(int target, float translationX, float translationY) {
+        View targetView = getFreeClockTargetView(target);
+        if (targetView == null) return;
+        if (target == SCALE_TARGET_TIME) {
+            timeFreeTranslationX = translationX;
+            timeFreeTranslationY = translationY;
+        } else if (target == SCALE_TARGET_DATE) {
+            dateFreeTranslationX = translationX;
+            dateFreeTranslationY = translationY;
+        } else if (target == SCALE_TARGET_WEATHER) {
+            weatherFreeTranslationX = translationX;
+            weatherFreeTranslationY = translationY;
+        }
+        targetView.setTranslationX(translationX);
+        targetView.setTranslationY(translationY);
+    }
+
+    private void setAndClampFreeClockTranslation(int target, float translationX, float translationY) {
+        if (rootContainer == null) return;
+        boolean hadPreviousBounds = getFreeClockTargetVisualBounds(
+                target, previousClockBoundsScratch);
+        setFreeClockTranslation(target, translationX, translationY);
+        if (getFreeClockTargetVisualBounds(target, clockBoundsScratch)) {
+            float marginLeft = dp(12);
+            float marginTop = dp(12);
+            float marginRight = rootContainer.getWidth() - dp(12);
+            float marginBottom = rootContainer.getHeight() - dp(12);
+            float visualWidth = clockBoundsScratch[2] - clockBoundsScratch[0];
+            float visualHeight = clockBoundsScratch[3] - clockBoundsScratch[1];
+            float correctionX = visualWidth > marginRight - marginLeft
+                    ? (rootContainer.getWidth() / 2.0f)
+                            - (clockBoundsScratch[0] + clockBoundsScratch[2]) / 2.0f
+                    : clockBoundsScratch[0] < marginLeft
+                            ? marginLeft - clockBoundsScratch[0]
+                            : clockBoundsScratch[2] > marginRight
+                                    ? marginRight - clockBoundsScratch[2] : 0.0f;
+            float correctionY = visualHeight > marginBottom - marginTop
+                    ? (rootContainer.getHeight() / 2.0f)
+                            - (clockBoundsScratch[1] + clockBoundsScratch[3]) / 2.0f
+                    : clockBoundsScratch[1] < marginTop
+                            ? marginTop - clockBoundsScratch[1]
+                            : clockBoundsScratch[3] > marginBottom
+                                    ? marginBottom - clockBoundsScratch[3] : 0.0f;
+            if (correctionX != 0.0f || correctionY != 0.0f) {
+                setFreeClockTranslation(
+                        target, translationX + correctionX, translationY + correctionY);
+            }
+        }
+        invalidateFreeClockTargetVisualChange(target, hadPreviousBounds);
+    }
+
+    private boolean getFreeClockTargetVisualBounds(int target, float[] outBounds) {
+        View targetView = getFreeClockTargetView(target);
+        return targetView != null && getClockChildVisualBounds(targetView, outBounds);
+    }
+
+    /** Redraw only the moving unit, important when the three units are far apart. */
+    private void invalidateFreeClockTargetVisualChange(int target, boolean hadPreviousBounds) {
+        if (rootContainer == null) return;
+        boolean hasCurrentBounds = getFreeClockTargetVisualBounds(target, clockBoundsScratch);
+        if (!hadPreviousBounds && !hasCurrentBounds) return;
+
+        float left = hasCurrentBounds ? clockBoundsScratch[0] : previousClockBoundsScratch[0];
+        float top = hasCurrentBounds ? clockBoundsScratch[1] : previousClockBoundsScratch[1];
+        float right = hasCurrentBounds ? clockBoundsScratch[2] : previousClockBoundsScratch[2];
+        float bottom = hasCurrentBounds ? clockBoundsScratch[3] : previousClockBoundsScratch[3];
+        if (hadPreviousBounds && hasCurrentBounds) {
+            left = Math.min(left, previousClockBoundsScratch[0]);
+            top = Math.min(top, previousClockBoundsScratch[1]);
+            right = Math.max(right, previousClockBoundsScratch[2]);
+            bottom = Math.max(bottom, previousClockBoundsScratch[3]);
+        }
+
+        int shadowPadding = dp(24);
+        int invalidLeft = Math.max(0, (int) Math.floor(left) - shadowPadding);
+        int invalidTop = Math.max(0, (int) Math.floor(top) - shadowPadding);
+        int invalidRight = Math.min(
+                rootContainer.getWidth(), (int) Math.ceil(right) + shadowPadding);
+        int invalidBottom = Math.min(
+                rootContainer.getHeight(), (int) Math.ceil(bottom) + shadowPadding);
+        if (invalidRight > invalidLeft && invalidBottom > invalidTop) {
+            rootContainer.invalidate(invalidLeft, invalidTop, invalidRight, invalidBottom);
+        }
+    }
+
+    private void saveFreeClockTranslations() {
+        if (prefs == null || rootContainer == null
+                || rootContainer.getWidth() <= 0 || rootContainer.getHeight() <= 0) {
+            return;
+        }
+        float rootWidth = rootContainer.getWidth();
+        float rootHeight = rootContainer.getHeight();
+        android.content.SharedPreferences.Editor editor = prefs.edit();
+        saveFreeClockTargetPosition(
+                editor, SCALE_TARGET_TIME,
+                CLOCK_FREE_TIME_X_RATIO, CLOCK_FREE_TIME_Y_RATIO,
+                rootWidth, rootHeight);
+        saveFreeClockTargetPosition(
+                editor, SCALE_TARGET_DATE,
+                CLOCK_FREE_DATE_X_RATIO, CLOCK_FREE_DATE_Y_RATIO,
+                rootWidth, rootHeight);
+        saveFreeClockTargetPosition(
+                editor, SCALE_TARGET_WEATHER,
+                CLOCK_FREE_WEATHER_X_RATIO, CLOCK_FREE_WEATHER_Y_RATIO,
+                rootWidth, rootHeight);
+        editor.apply();
+    }
+
+    private void saveFreeClockTargetPosition(
+            android.content.SharedPreferences.Editor editor, int target,
+            String xKey, String yKey, float rootWidth, float rootHeight) {
+        if (!getFreeClockTargetVisualBounds(target, clockBoundsScratch)) return;
+        editor.putFloat(orientationKey(xKey),
+                (clockBoundsScratch[0] + clockBoundsScratch[2]) / (2.0f * rootWidth));
+        editor.putFloat(orientationKey(yKey),
+                (clockBoundsScratch[1] + clockBoundsScratch[3]) / (2.0f * rootHeight));
+    }
+
+    private void restoreFreeClockTranslations() {
+        if (!clockFreeLayoutEnabled || prefs == null || rootContainer == null
+                || rootContainer.getWidth() <= 0 || rootContainer.getHeight() <= 0) {
+            return;
+        }
+        float rootWidth = rootContainer.getWidth();
+        float rootHeight = rootContainer.getHeight();
+        restoreFreeClockTargetPosition(
+                SCALE_TARGET_TIME,
+                CLOCK_FREE_TIME_X_RATIO, CLOCK_FREE_TIME_Y_RATIO,
+                rootWidth, rootHeight);
+        restoreFreeClockTargetPosition(
+                SCALE_TARGET_DATE,
+                CLOCK_FREE_DATE_X_RATIO, CLOCK_FREE_DATE_Y_RATIO,
+                rootWidth, rootHeight);
+        restoreFreeClockTargetPosition(
+                SCALE_TARGET_WEATHER,
+                CLOCK_FREE_WEATHER_X_RATIO, CLOCK_FREE_WEATHER_Y_RATIO,
+                rootWidth, rootHeight);
+    }
+
+    private void restoreFreeClockTargetPosition(
+            int target, String xKey, String yKey, float rootWidth, float rootHeight) {
+        String orientedXKey = orientationKey(xKey);
+        String orientedYKey = orientationKey(yKey);
+        if (!prefs.contains(orientedXKey) || !prefs.contains(orientedYKey)
+                || !getFreeClockTargetVisualBounds(target, clockBoundsScratch)) {
+            return;
+        }
+        float desiredCenterX = prefs.getFloat(orientedXKey, 0.5f) * rootWidth;
+        float desiredCenterY = prefs.getFloat(orientedYKey, 0.5f) * rootHeight;
+        float currentCenterX = (clockBoundsScratch[0] + clockBoundsScratch[2]) / 2.0f;
+        float currentCenterY = (clockBoundsScratch[1] + clockBoundsScratch[3]) / 2.0f;
+        setAndClampFreeClockTranslation(
+                target,
+                getFreeClockTranslationX(target) + desiredCenterX - currentCenterX,
+                getFreeClockTranslationY(target) + desiredCenterY - currentCenterY);
     }
 
     private float getClockDefaultLeft() {
@@ -1958,22 +2875,25 @@ public final class PhotoClockActivity extends Activity {
         }
         int rootW = rootContainer.getWidth();
         int rootH = rootContainer.getHeight();
-        int clockW = clockPanel.getWidth();
-        int clockH = clockPanel.getHeight();
-        if (rootW <= 0 || rootH <= 0 || clockW <= 0 || clockH <= 0) {
+        if (rootW <= 0 || rootH <= 0 || !getClockVisualBounds(clockBoundsScratch)) {
             clockBaseTranslationX = targetTransX;
             clockBaseTranslationY = targetTransY;
             applyClockTranslation();
             return;
         }
 
-        float defaultLeft = getClockDefaultLeft();
-        float defaultTop = getClockDefaultTop();
-
-        float minTransX = -defaultLeft + dp(12);
-        float maxTransX = dp(16);
-        float minTransY = -defaultTop + dp(12);
-        float maxTransY = dp(16);
+        // Remove the current panel translation to get bounds at a zero translation,
+        // then constrain the transformed visual group instead of its stale layout box.
+        float fixedLeft = clockBoundsScratch[0] - clockPanel.getTranslationX();
+        float fixedTop = clockBoundsScratch[1] - clockPanel.getTranslationY();
+        float fixedRight = clockBoundsScratch[2] - clockPanel.getTranslationX();
+        float fixedBottom = clockBoundsScratch[3] - clockPanel.getTranslationY();
+        float minTransX = dp(12) - fixedLeft - burnInOffsetX;
+        float maxTransX = rootW - dp(16) - fixedRight - burnInOffsetX;
+        float minTransY = dp(12) - fixedTop - burnInOffsetY;
+        float maxTransY = rootH - dp(16) - fixedBottom - burnInOffsetY;
+        if (minTransX > maxTransX) minTransX = maxTransX = (minTransX + maxTransX) / 2.0f;
+        if (minTransY > maxTransY) minTransY = maxTransY = (minTransY + maxTransY) / 2.0f;
 
         clockBaseTranslationX = Math.max(minTransX, Math.min(maxTransX, targetTransX));
         clockBaseTranslationY = Math.max(minTransY, Math.min(maxTransY, targetTransY));
@@ -1986,14 +2906,15 @@ public final class PhotoClockActivity extends Activity {
         }
         int rootW = rootContainer.getWidth();
         int rootH = rootContainer.getHeight();
-        int clockW = clockPanel.getWidth();
-        int clockH = clockPanel.getHeight();
+        if (!getClockVisualBounds(clockBoundsScratch)) return;
+        float clockW = clockBoundsScratch[2] - clockBoundsScratch[0];
+        float clockH = clockBoundsScratch[3] - clockBoundsScratch[1];
         if (rootW <= clockW || rootH <= clockH) {
             return;
         }
 
-        float currentLeft = getClockDefaultLeft() + clockBaseTranslationX;
-        float currentTop = getClockDefaultTop() + clockBaseTranslationY;
+        float currentLeft = clockBoundsScratch[0];
+        float currentTop = clockBoundsScratch[1];
 
         prefs.edit()
                 .putFloat(orientationKey(CLOCK_POS_X_RATIO), currentLeft / (float) (rootW - clockW))
@@ -2013,20 +2934,24 @@ public final class PhotoClockActivity extends Activity {
         }
         int rootW = rootContainer.getWidth();
         int rootH = rootContainer.getHeight();
-        int clockW = clockPanel.getWidth();
-        int clockH = clockPanel.getHeight();
+        if (!getClockVisualBounds(clockBoundsScratch)) return;
+        float clockW = clockBoundsScratch[2] - clockBoundsScratch[0];
+        float clockH = clockBoundsScratch[3] - clockBoundsScratch[1];
         if (rootW <= clockW || rootH <= clockH) {
             return;
         }
 
-        float defaultLeft = getClockDefaultLeft();
-        float defaultTop = getClockDefaultTop();
-        clampAndApplyTranslation(ratioX * (rootW - clockW) - defaultLeft, ratioY * (rootH - clockH) - defaultTop);
+        float fixedLeft = clockBoundsScratch[0] - clockPanel.getTranslationX();
+        float fixedTop = clockBoundsScratch[1] - clockPanel.getTranslationY();
+        clampAndApplyTranslation(
+                ratioX * (rootW - clockW) - fixedLeft - burnInOffsetX,
+                ratioY * (rootH - clockH) - fixedTop - burnInOffsetY);
         applyClockScale();
     }
 
     private void applyClockTranslation() {
         if (clockPanel != null) {
+            boolean hadPreviousBounds = captureClockVisualBounds(previousClockBoundsScratch);
             if (pomodoroModeLayoutActive) {
                 clockPanel.setTranslationX(0.0f);
                 clockPanel.setTranslationY(0.0f);
@@ -2034,6 +2959,7 @@ public final class PhotoClockActivity extends Activity {
                 clockPanel.setTranslationX(clockBaseTranslationX + burnInOffsetX);
                 clockPanel.setTranslationY(clockBaseTranslationY + burnInOffsetY);
             }
+            invalidateClockVisualChange(hadPreviousBounds);
         }
     }
 
@@ -2560,7 +3486,10 @@ public final class PhotoClockActivity extends Activity {
                     @Override
                     public void run() {
                         updateWeatherFromCache();
-                        if (!pomodoroModeLayoutActive) restoreClockPosition();
+                        if (!pomodoroModeLayoutActive) {
+                            restoreClockPosition();
+                            restoreFreeClockTranslations();
+                        }
                     }
                 });
             }
@@ -2774,7 +3703,9 @@ public final class PhotoClockActivity extends Activity {
         weatherIcon.setWeather(code, isDay);
         compactWeatherIcon.setWeather(code, isDay);
 
-        boolean compact = weatherCompactMode && !weatherShowLocation;
+        // Free layout always uses a standalone weather unit; compact weather is nested
+        // inside the date row and therefore cannot be positioned independently.
+        boolean compact = weatherCompactMode && !weatherShowLocation && !clockFreeLayoutEnabled;
         compactWeatherRow.setVisibility(compact ? View.VISIBLE : View.GONE);
         weatherRow.setVisibility(compact ? View.GONE : View.VISIBLE);
         if (clockPanel != null) clockPanel.requestLayout();
