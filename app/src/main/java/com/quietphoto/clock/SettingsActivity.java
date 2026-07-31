@@ -164,6 +164,7 @@ public final class SettingsActivity extends Activity {
     private SeekBar intervalSeekBar;
     private CheckBox nightModeCheck;
     private CheckBox clockTimeCheck;
+    private CheckBox bindScaleCheck;
     private CheckBox clockDateCheck;
     private CheckBox clockBgCheck;
     private CheckBox adaptiveColorCheck;
@@ -220,6 +221,7 @@ public final class SettingsActivity extends Activity {
         selectedInterval = nearestIntervalStep(
                 prefs.getInt(PHOTO_INTERVAL_SECONDS, DEFAULT_INTERVAL_SECONDS));
         clockTimeEnabled = prefs.getBoolean(CLOCK_TIME_ENABLED, true);
+        boolean bindScale = prefs.getBoolean(PhotoClockActivity.BIND_SCALE, true);
         clockDateEnabled = prefs.getBoolean(CLOCK_DATE_ENABLED, true);
         clockBgEnabled = prefs.getBoolean(CLOCK_BACKGROUND_ENABLED, false);
         selectedFontStyle = prefs.getInt(CLOCK_FONT_STYLE, 0);
@@ -715,6 +717,9 @@ public final class SettingsActivity extends Activity {
         addInlineSectionHeader(mainSection, "時鐘顯示", "CLOCK");
         clockTimeCheck = checkBox("顯示時間", clockTimeEnabled);
         mainSection.addView(clockTimeCheck);
+        
+        bindScaleCheck = checkBox("綁定時間日期天氣大小", bindScale);
+        mainSection.addView(bindScaleCheck);
 
         clockDateCheck = checkBox("顯示日期", clockDateEnabled);
         mainSection.addView(clockDateCheck);
@@ -1600,6 +1605,7 @@ public final class SettingsActivity extends Activity {
                 getSharedPreferences(PREFERENCES, MODE_PRIVATE).edit()
                 .putInt(PHOTO_INTERVAL_SECONDS, selectedInterval)
                 .putBoolean(CLOCK_TIME_ENABLED, clockTimeCheck.isChecked())
+                .putBoolean(PhotoClockActivity.BIND_SCALE, bindScaleCheck.isChecked())
                 .putBoolean(CLOCK_DATE_ENABLED, clockDateCheck.isChecked())
                 .putBoolean(CLOCK_BACKGROUND_ENABLED, clockBgCheck.isChecked())
                 .putString(CLOCK_FONT_ID, selectedFontId)
