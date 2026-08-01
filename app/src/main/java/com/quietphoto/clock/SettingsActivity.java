@@ -145,6 +145,7 @@ public final class SettingsActivity extends Activity {
     private double weatherLongitude = Double.NaN;
     private boolean weatherLocationChanged;
     private boolean clearHiddenRequested;
+    private boolean resetClockLayoutRequested;
     private boolean settingsSaved;
     private boolean pendingGrantsReleased;
     private boolean awaitingExactAlarmPermission;
@@ -728,6 +729,29 @@ public final class SettingsActivity extends Activity {
 
         clockBgCheck = checkBox("時間底板", clockBgEnabled);
         mainSection.addView(clockBgCheck);
+
+        Button resetClockLayoutButton = button("恢復時鐘預設大小與位置", PANEL_RAISED);
+        resetClockLayoutButton.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                new AlertDialog.Builder(SettingsActivity.this)
+                        .setTitle("恢復時鐘預設")
+                        .setMessage("將恢復時間、日期、天氣的預設大小、比例與位置。字型選擇不會改變。")
+                        .setNegativeButton("取消", null)
+                        .setPositiveButton("恢復", new DialogInterface.OnClickListener() {
+                            @Override
+                            public void onClick(DialogInterface dialog, int which) {
+                                resetClockLayoutRequested = true;
+                                clockSizesLinkedCheck.setChecked(true);
+                                Toast.makeText(SettingsActivity.this,
+                                        "已標記恢復，按下儲存後套用", Toast.LENGTH_SHORT).show();
+                            }
+                        })
+                        .show();
+            }
+        });
+        mainSection.addView(resetClockLayoutButton, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(42)));
 
         addDivider(mainSection);
         addInlineSectionHeader(mainSection, "夜間模式", "NIGHT");
@@ -1642,6 +1666,9 @@ public final class SettingsActivity extends Activity {
                 .putInt(PomodoroHelper.PREF_SHORT_BREAK_MINUTES, pomodoroShortBreakMinutes)
                 .putInt(PomodoroHelper.PREF_LONG_BREAK_MINUTES, pomodoroLongBreakMinutes)
                 .putStringSet(PHOTO_FOLDERS, new HashSet<String>(selectedFolders));
+        if (resetClockLayoutRequested) {
+            PhotoClockActivity.resetClockLayoutPreferences(editor);
+        }
         if (clearHiddenRequested) {
             editor.remove(HIDDEN_PHOTOS);
         }
