@@ -116,7 +116,7 @@ public final class SettingsActivity extends Activity {
     private int selectedInterval;
     private boolean clockTimeEnabled = true;
     private boolean clockDateEnabled = true;
-    private boolean clockSizesLinked = true;
+    private int clockSizeMode = PhotoClockActivity.CLOCK_SIZE_MODE_OVERLAP;
     private boolean clockBgEnabled;
     private int selectedFontStyle;
     private String selectedFontId;
@@ -167,7 +167,6 @@ public final class SettingsActivity extends Activity {
     private CheckBox nightModeCheck;
     private CheckBox clockTimeCheck;
     private CheckBox clockDateCheck;
-    private CheckBox clockSizesLinkedCheck;
     private CheckBox clockBgCheck;
     private CheckBox adaptiveColorCheck;
     private CheckBox polaroidFrameCheck;
@@ -192,6 +191,7 @@ public final class SettingsActivity extends Activity {
     private Spinner weatherFontSpinner;
     private Spinner transitionSpinner;
     private Spinner displayModeSpinner;
+    private Spinner clockSizeModeSpinner;
     private final ExecutorService networkExecutor = Executors.newSingleThreadExecutor();
 
     private float displayDensity;
@@ -224,8 +224,15 @@ public final class SettingsActivity extends Activity {
                 prefs.getInt(PHOTO_INTERVAL_SECONDS, DEFAULT_INTERVAL_SECONDS));
         clockTimeEnabled = prefs.getBoolean(CLOCK_TIME_ENABLED, true);
         clockDateEnabled = prefs.getBoolean(CLOCK_DATE_ENABLED, true);
-        clockSizesLinked = prefs.getBoolean(PhotoClockActivity.CLOCK_SIZES_LINKED,
-                prefs.getBoolean(PhotoClockActivity.LEGACY_BIND_SCALE, true));
+        if (prefs.contains(PhotoClockActivity.CLOCK_SIZE_MODE)) {
+            clockSizeMode = ClockSizeModePolicy.normalize(prefs.getInt(
+                    PhotoClockActivity.CLOCK_SIZE_MODE,
+                    PhotoClockActivity.CLOCK_SIZE_MODE_OVERLAP));
+        } else {
+            clockSizeMode = ClockSizeModePolicy.fromLegacyLinked(
+                    prefs.getBoolean(PhotoClockActivity.CLOCK_SIZES_LINKED,
+                            prefs.getBoolean(PhotoClockActivity.LEGACY_BIND_SCALE, true)));
+        }
         clockBgEnabled = prefs.getBoolean(CLOCK_BACKGROUND_ENABLED, false);
         selectedFontStyle = prefs.getInt(CLOCK_FONT_STYLE, 0);
         String defaultFont = BuildConfig.INCLUDE_STOROPIA ? "asset:font_storopia.ttf" : "asset:font_oxanium.ttf";
@@ -724,8 +731,15 @@ public final class SettingsActivity extends Activity {
         clockDateCheck = checkBox("顯示日期", clockDateEnabled);
         mainSection.addView(clockDateCheck);
 
-        clockSizesLinkedCheck = checkBox("綁定時間、日期、天氣大小", clockSizesLinked);
-        mainSection.addView(clockSizesLinkedCheck);
+        clockSizeModeSpinner = addSpinner(
+                mainSection,
+                "大小變化方式",
+                new String[] {
+                        "固定位置（可重疊）",
+                        "自動避讓（原始效果）",
+                        "整體放大（保持間隔）"
+                },
+                clockSizeMode);
 
         clockBgCheck = checkBox("時間底板", clockBgEnabled);
         mainSection.addView(clockBgCheck);
@@ -742,7 +756,8 @@ public final class SettingsActivity extends Activity {
                             @Override
                             public void onClick(DialogInterface dialog, int which) {
                                 resetClockLayoutRequested = true;
-                                clockSizesLinkedCheck.setChecked(true);
+                                clockSizeModeSpinner.setSelection(
+                                        PhotoClockActivity.CLOCK_SIZE_MODE_OVERLAP);
                                 Toast.makeText(SettingsActivity.this,
                                         "已標記恢復，按下儲存後套用", Toast.LENGTH_SHORT).show();
                             }
@@ -1622,6 +1637,8 @@ public final class SettingsActivity extends Activity {
         selectedWeatherFontId = fontOptions.get(weatherFontIndex).id;
         selectedTransition = Math.max(0, Math.min(5, transitionSpinner.getSelectedItemPosition()));
         selectedDisplayMode = Math.max(0, Math.min(2, displayModeSpinner.getSelectedItemPosition()));
+        clockSizeMode = ClockSizeModePolicy.normalize(
+                clockSizeModeSpinner.getSelectedItemPosition());
         if (weatherEnabledCheck.isChecked()
                 && (Double.isNaN(weatherLatitude) || Double.isNaN(weatherLongitude))) {
             Toast.makeText(this, "請先選擇天氣地點", Toast.LENGTH_SHORT).show();
@@ -1632,8 +1649,9 @@ public final class SettingsActivity extends Activity {
                 .putInt(PHOTO_INTERVAL_SECONDS, selectedInterval)
                 .putBoolean(CLOCK_TIME_ENABLED, clockTimeCheck.isChecked())
                 .putBoolean(CLOCK_DATE_ENABLED, clockDateCheck.isChecked())
+                .putInt(PhotoClockActivity.CLOCK_SIZE_MODE, clockSizeMode)
                 .putBoolean(PhotoClockActivity.CLOCK_SIZES_LINKED,
-                        clockSizesLinkedCheck.isChecked())
+                        ClockSizeModePolicy.usesLinkedScale(clockSizeMode))
                 .putBoolean(CLOCK_BACKGROUND_ENABLED, clockBgCheck.isChecked())
                 .putString(CLOCK_FONT_ID, selectedFontId)
                 .putString(DATE_FONT_ID, selectedDateFontId)
