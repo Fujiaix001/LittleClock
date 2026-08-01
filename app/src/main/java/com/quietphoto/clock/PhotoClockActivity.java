@@ -82,6 +82,21 @@ public final class PhotoClockActivity extends Activity {
     private static final float PHOTO_PAN_TRAVEL_FRACTION = 0.20f;
     private static final String CLOCK_POS_X_RATIO = "clock_pos_x_ratio";
     private static final String CLOCK_POS_Y_RATIO = "clock_pos_y_ratio";
+    private static final int CLOCK_LAYOUT_VERSION = 2;
+    private static final String CLOCK_LAYOUT_VERSION_KEY = "clock_layout_version";
+    private static final String CLOCK_TIME_POS_X_RATIO = "clock_time_pos_x_ratio";
+    private static final String CLOCK_TIME_POS_Y_RATIO = "clock_time_pos_y_ratio";
+    private static final String CLOCK_DATE_POS_X_RATIO = "clock_date_pos_x_ratio";
+    private static final String CLOCK_DATE_POS_Y_RATIO = "clock_date_pos_y_ratio";
+    private static final String CLOCK_WEATHER_POS_X_RATIO = "clock_weather_pos_x_ratio";
+    private static final String CLOCK_WEATHER_POS_Y_RATIO = "clock_weather_pos_y_ratio";
+    private static final float DEFAULT_CLOCK_SCALE = 0.75f;
+    private static final float DEFAULT_TIME_X_RATIO = 0.86f;
+    private static final float DEFAULT_TIME_Y_RATIO = 0.76f;
+    private static final float DEFAULT_DATE_X_RATIO = 0.86f;
+    private static final float DEFAULT_DATE_Y_RATIO = 0.88f;
+    private static final float DEFAULT_WEATHER_X_RATIO = 0.86f;
+    private static final float DEFAULT_WEATHER_Y_RATIO = 0.96f;
     public static final String CLOCK_SCALE_FACTOR = "clock_scale_factor";
     public static final String CLOCK_SIZES_LINKED = "clock_sizes_linked";
     public static final String LEGACY_BIND_SCALE = "bind_scale";
@@ -118,7 +133,10 @@ public final class PhotoClockActivity extends Activity {
     private ImageView backgroundImage;
     private ImageView photoImage;
     private TextView photoStatus;
-    private AccessibleLinearLayout clockPanel;
+    private AccessibleFrameLayout clockPanel;
+    private AccessibleFrameLayout timeBlock;
+    private AccessibleFrameLayout dateBlock;
+    private AccessibleFrameLayout weatherBlock;
     private TextView photoTime;
     private TextView photoDate;
     private LinearLayout dateRow;
@@ -243,16 +261,21 @@ public final class PhotoClockActivity extends Activity {
     private long lastPhotoSwipeEndTime;
     private float touchDownRawX;
     private float touchDownRawY;
-    private float clockStartTransX;
-    private float clockStartTransY;
     private float clockScaleFactor = 1.0f;
     private boolean clockSizesLinked = true;
     private float timeScaleFactor = 1.0f;
     private float dateScaleFactor = 1.0f;
     private float weatherScaleFactor = 1.0f;
     private int activeScaleTarget = SCALE_TARGET_NONE;
-    private float clockBaseTranslationX;
-    private float clockBaseTranslationY;
+    private View activeClockBlock;
+    private float clockStartBlockX;
+    private float clockStartBlockY;
+    private float timeBlockBaseX;
+    private float timeBlockBaseY;
+    private float dateBlockBaseX;
+    private float dateBlockBaseY;
+    private float weatherBlockBaseX;
+    private float weatherBlockBaseY;
     private float burnInOffsetX;
     private float burnInOffsetY;
     private ScaleGestureDetector scaleGestureDetector;
@@ -303,8 +326,8 @@ public final class PhotoClockActivity extends Activity {
         void onPhotoDiscovered(PhotoSource source);
     }
 
-    private static final class AccessibleLinearLayout extends LinearLayout {
-        AccessibleLinearLayout(android.content.Context context) {
+    private static final class AccessibleFrameLayout extends FrameLayout {
+        AccessibleFrameLayout(android.content.Context context) {
             super(context);
         }
 
@@ -874,20 +897,10 @@ public final class PhotoClockActivity extends Activity {
     }
 
     private boolean isTouchOnClock(MotionEvent event) {
-        if (clockPanel == null || event == null) {
-            return false;
-        }
-        int[] location = new int[2];
-        clockPanel.getLocationOnScreen(location);
-        float x = event.getRawX();
-        float y = event.getRawY();
-        float scaleX = clockPanel.getScaleX();
-        float scaleY = clockPanel.getScaleY();
-        float left = location[0] + clockPanel.getPivotX() * (1.0f - scaleX);
-        float top = location[1] + clockPanel.getPivotY() * (1.0f - scaleY);
-        float right = left + clockPanel.getWidth() * scaleX;
-        float bottom = top + clockPanel.getHeight() * scaleY;
-        return x >= left && x <= right && y >= top && y <= bottom;
+        if (event == null) return false;
+        return isTouchOnView(timeBlock, event)
+                || isTouchOnView(dateBlock, event)
+                || isTouchOnView(weatherBlock, event);
     }
 
     private void showPhotoActions() {
@@ -1281,21 +1294,64 @@ public final class PhotoClockActivity extends Activity {
         if (alarmTimeText != null) alarmTimeText.setTypeface(clockTypeface);
         if (pomodoroLabel != null) pomodoroLabel.setTypeface(clockTypeface);
         if (pomodoroText != null) pomodoroText.setTypeface(clockTypeface);
+        updateTimeBlockVisibility();
+        updateDateBlockVisibility();
+        updateWeatherBlockVisibility();
         updatePhotoClock();
 
-        if (clockBgEnabled) {
-            GradientDrawable bg = new GradientDrawable();
-            int bgColor = isAdaptiveColorActive() ?
-                    Color.argb(85, Color.red(currentDominantColor), Color.green(currentDominantColor), Color.blue(currentDominantColor)) :
-                    Color.argb(65, 0, 0, 0);
-            bg.setColor(bgColor);
-            bg.setCornerRadius(dp(10));
-            clockPanel.setBackground(bg);
-            clockPanel.setPadding(dp(12), dp(4), dp(12), dp(6));
-        } else {
-            clockPanel.setBackground(null);
-            clockPanel.setPadding(0, 0, 0, 0);
+        applyClockBlockBackgrounds();
+    }
+
+    private void updateDateBlockVisibility() {
+        if (dateBlock == null) return;
+        boolean visible = (photoDate != null && photoDate.getVisibility() == View.VISIBLE)
+                || (alarmRow != null && alarmRow.getVisibility() == View.VISIBLE);
+        dateBlock.setVisibility(visible ? View.VISIBLE : View.GONE);
+    }
+
+    private void updateWeatherBlockVisibility() {
+        if (weatherBlock == null) return;
+        boolean visible = (compactWeatherRow != null
+                && compactWeatherRow.getVisibility() == View.VISIBLE)
+                || (weatherRow != null && weatherRow.getVisibility() == View.VISIBLE);
+        weatherBlock.setVisibility(visible ? View.VISIBLE : View.GONE);
+    }
+
+    private void applyClockBlockBackgrounds() {
+        if (timeBlock == null || dateBlock == null || weatherBlock == null) return;
+        if (!clockBgEnabled) {
+            clearClockBlockBackground(timeBlock);
+            clearClockBlockBackground(dateBlock);
+            clearClockBlockBackground(weatherBlock);
+            return;
         }
+
+        int bgColor = isAdaptiveColorActive()
+                ? Color.argb(85, Color.red(currentDominantColor),
+                Color.green(currentDominantColor), Color.blue(currentDominantColor))
+                : Color.argb(65, 0, 0, 0);
+        applyClockBlockBackground(timeBlock, bgColor);
+        applyClockBlockBackground(dateBlock, bgColor);
+        applyClockBlockBackground(weatherBlock, bgColor);
+    }
+
+    private void applyClockBlockBackground(View block, int color) {
+        GradientDrawable background = new GradientDrawable();
+        background.setColor(color);
+        background.setCornerRadius(dp(10));
+        block.setBackground(background);
+        block.setPadding(dp(12), dp(4), dp(12), dp(6));
+    }
+
+    private void clearClockBlockBackground(View block) {
+        block.setBackground(null);
+        block.setPadding(0, 0, 0, 0);
+    }
+
+    private void updateTimeBlockVisibility() {
+        if (timeBlock == null) return;
+        timeBlock.setVisibility(photoTime != null
+                && photoTime.getVisibility() == View.VISIBLE ? View.VISIBLE : View.GONE);
     }
 
     private View buildInterface() {
@@ -1343,10 +1399,12 @@ public final class PhotoClockActivity extends Activity {
                 FrameLayout.LayoutParams.WRAP_CONTENT,
                 Gravity.CENTER));
 
-        clockPanel = new AccessibleLinearLayout(this);
-        clockPanel.setOrientation(LinearLayout.VERTICAL);
-        clockPanel.setGravity(Gravity.CENTER_HORIZONTAL);
+        clockPanel = new AccessibleFrameLayout(this);
+        clockPanel.setClipChildren(false);
+        clockPanel.setClipToPadding(false);
 
+        timeBlock = new AccessibleFrameLayout(this);
+        timeBlock.setContentDescription("時間區塊");
         photoTime = new TextView(this);
         photoTime.setTextSize(64);
         photoTime.setTextColor(Color.WHITE);
@@ -1354,10 +1412,14 @@ public final class PhotoClockActivity extends Activity {
         photoTime.setTypeface(Typeface.DEFAULT_BOLD);
         photoTime.setIncludeFontPadding(false);
         photoTime.setShadowLayer(dp(3), dp(1), dp(1), Color.BLACK);
-        clockPanel.addView(photoTime, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT));
+        timeBlock.addView(photoTime, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                Gravity.CENTER));
+        clockPanel.addView(timeBlock, clockBlockLayoutParams());
 
+        dateBlock = new AccessibleFrameLayout(this);
+        dateBlock.setContentDescription("日期區塊");
         dateRow = new LinearLayout(this);
         dateRow.setOrientation(LinearLayout.HORIZONTAL);
         dateRow.setGravity(Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
@@ -1368,32 +1430,6 @@ public final class PhotoClockActivity extends Activity {
         photoDate.setGravity(Gravity.CENTER_HORIZONTAL);
         photoDate.setIncludeFontPadding(false);
         photoDate.setShadowLayer(dp(2), dp(1), dp(1), Color.BLACK);
-        compactWeatherRow = new LinearLayout(this);
-        compactWeatherRow.setOrientation(LinearLayout.HORIZONTAL);
-        compactWeatherRow.setGravity(Gravity.BOTTOM);
-        compactWeatherRow.setVisibility(View.GONE);
-
-        compactWeatherIcon = new WeatherIconView(this);
-        compactWeatherRow.addView(
-                compactWeatherIcon, new LinearLayout.LayoutParams(dp(22), dp(22)));
-
-        compactWeatherTemperature = new TextView(this);
-        compactWeatherTemperature.setTextSize(18);
-        compactWeatherTemperature.setTextColor(Color.WHITE);
-        compactWeatherTemperature.setIncludeFontPadding(false);
-        compactWeatherTemperature.setShadowLayer(dp(2), dp(1), dp(1), Color.BLACK);
-        LinearLayout.LayoutParams compactTemperatureParams = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT);
-        compactTemperatureParams.setMargins(dp(3), 0, 0, 0);
-        compactWeatherRow.addView(compactWeatherTemperature, compactTemperatureParams);
-
-        LinearLayout.LayoutParams compactWeatherParams = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT);
-        compactWeatherParams.gravity = Gravity.BOTTOM;
-        compactWeatherParams.setMargins(0, 0, dp(9), dp(3));
-        dateRow.addView(compactWeatherRow, compactWeatherParams);
         dateRow.addView(photoDate, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT));
@@ -1424,40 +1460,38 @@ public final class PhotoClockActivity extends Activity {
         alarmParams.gravity = Gravity.BOTTOM;
         alarmParams.setMargins(dp(4), 0, 0, dp(3));
         dateRow.addView(alarmRow, alarmParams);
+        dateBlock.addView(dateRow, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                Gravity.CENTER));
+        clockPanel.addView(dateBlock, clockBlockLayoutParams());
 
-        pomodoroRow = new LinearLayout(this);
-        pomodoroRow.setOrientation(LinearLayout.VERTICAL);
-        pomodoroRow.setGravity(Gravity.CENTER);
-        pomodoroRow.setVisibility(View.GONE);
-        pomodoroLabel = new TextView(this);
-        pomodoroLabel.setTextSize(24);
-        pomodoroLabel.setTextColor(Color.WHITE);
-        pomodoroLabel.setGravity(Gravity.CENTER_HORIZONTAL);
-        pomodoroLabel.setIncludeFontPadding(false);
-        pomodoroLabel.setShadowLayer(dp(2), dp(1), dp(1), Color.BLACK);
-        LinearLayout.LayoutParams pomodoroLabelParams = new LinearLayout.LayoutParams(
+        weatherBlock = new AccessibleFrameLayout(this);
+        weatherBlock.setContentDescription("天氣區塊");
+
+        compactWeatherRow = new LinearLayout(this);
+        compactWeatherRow.setOrientation(LinearLayout.HORIZONTAL);
+        compactWeatherRow.setGravity(Gravity.BOTTOM);
+        compactWeatherRow.setVisibility(View.GONE);
+
+        compactWeatherIcon = new WeatherIconView(this);
+        compactWeatherRow.addView(
+                compactWeatherIcon, new LinearLayout.LayoutParams(dp(22), dp(22)));
+
+        compactWeatherTemperature = new TextView(this);
+        compactWeatherTemperature.setTextSize(18);
+        compactWeatherTemperature.setTextColor(Color.WHITE);
+        compactWeatherTemperature.setIncludeFontPadding(false);
+        compactWeatherTemperature.setShadowLayer(dp(2), dp(1), dp(1), Color.BLACK);
+        LinearLayout.LayoutParams compactTemperatureParams = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT);
-        pomodoroLabelParams.bottomMargin = -dp(4);
-        pomodoroRow.addView(pomodoroLabel, pomodoroLabelParams);
-        pomodoroText = new TextView(this);
-        pomodoroText.setTextSize(112);
-        pomodoroText.setTextColor(POMODORO_RED);
-        pomodoroText.setGravity(Gravity.CENTER_HORIZONTAL);
-        pomodoroText.setIncludeFontPadding(false);
-        pomodoroText.setShadowLayer(dp(3), dp(1), dp(1), Color.BLACK);
-        pomodoroRow.addView(pomodoroText, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT));
-        LinearLayout.LayoutParams pomodoroParams = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT);
-        pomodoroParams.setMargins(0, dp(3), 0, 0);
-        clockPanel.addView(pomodoroRow, pomodoroParams);
-
-        clockPanel.addView(dateRow, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT));
+        compactTemperatureParams.setMargins(dp(3), 0, 0, 0);
+        compactWeatherRow.addView(compactWeatherTemperature, compactTemperatureParams);
+        weatherBlock.addView(compactWeatherRow, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                Gravity.CENTER));
 
         weatherRow = new LinearLayout(this);
         weatherRow.setOrientation(LinearLayout.HORIZONTAL);
@@ -1489,18 +1523,42 @@ public final class PhotoClockActivity extends Activity {
                 LinearLayout.LayoutParams.WRAP_CONTENT);
         weatherLocationParams.setMargins(dp(8), 0, 0, 0);
         weatherRow.addView(weatherLocation, weatherLocationParams);
-        LinearLayout.LayoutParams weatherRowParams = new LinearLayout.LayoutParams(
+        FrameLayout.LayoutParams weatherRowParams = new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                Gravity.CENTER);
+        weatherRowParams.topMargin = dp(3);
+        weatherBlock.addView(weatherRow, weatherRowParams);
+        clockPanel.addView(weatherBlock, clockBlockLayoutParams());
+
+        pomodoroRow = new LinearLayout(this);
+        pomodoroRow.setOrientation(LinearLayout.VERTICAL);
+        pomodoroRow.setGravity(Gravity.CENTER);
+        pomodoroRow.setVisibility(View.GONE);
+        pomodoroLabel = new TextView(this);
+        pomodoroLabel.setTextSize(24);
+        pomodoroLabel.setTextColor(Color.WHITE);
+        pomodoroLabel.setGravity(Gravity.CENTER_HORIZONTAL);
+        pomodoroLabel.setIncludeFontPadding(false);
+        pomodoroLabel.setShadowLayer(dp(2), dp(1), dp(1), Color.BLACK);
+        LinearLayout.LayoutParams pomodoroLabelParams = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT);
-        weatherRowParams.setMargins(0, dp(3), 0, 0);
-        clockPanel.addView(weatherRow, weatherRowParams);
+        pomodoroLabelParams.bottomMargin = -dp(4);
+        pomodoroRow.addView(pomodoroLabel, pomodoroLabelParams);
+        pomodoroText = new TextView(this);
+        pomodoroText.setTextSize(112);
+        pomodoroText.setTextColor(POMODORO_RED);
+        pomodoroText.setGravity(Gravity.CENTER_HORIZONTAL);
+        pomodoroText.setIncludeFontPadding(false);
+        pomodoroText.setShadowLayer(dp(3), dp(1), dp(1), Color.BLACK);
+        pomodoroRow.addView(pomodoroText, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT));
 
-        FrameLayout.LayoutParams clockParams = new FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.WRAP_CONTENT,
-                FrameLayout.LayoutParams.WRAP_CONTENT,
-                Gravity.BOTTOM | Gravity.END);
-        clockParams.setMargins(dp(28), dp(28), dp(16), dp(16));
-        rootContainer.addView(clockPanel, clockParams);
+        rootContainer.addView(clockPanel, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT));
 
         pomodoroFocusPanel = new FrameLayout(this);
         pomodoroFocusPanel.setVisibility(View.GONE);
@@ -1842,8 +1900,8 @@ public final class PhotoClockActivity extends Activity {
     }
 
     private void loadClockScalePreferences(float defaultScale) {
-        clockScaleFactor = prefs.getFloat(
-                orientationKey(CLOCK_SCALE_FACTOR), defaultScale);
+        clockScaleFactor = clampClockScale(prefs.getFloat(
+                orientationKey(CLOCK_SCALE_FACTOR), defaultScale));
         clockSizesLinked = prefs.getBoolean(CLOCK_SIZES_LINKED,
                 prefs.getBoolean(LEGACY_BIND_SCALE, true));
         if (clockSizesLinked) {
@@ -1862,26 +1920,21 @@ public final class PhotoClockActivity extends Activity {
 
     private float loadComponentScale(String key, String legacyKey, float defaultScale) {
         String orientedKey = orientationKey(key);
-        if (prefs.contains(orientedKey)) return prefs.getFloat(orientedKey, defaultScale);
-        return prefs.getFloat(orientationKey(legacyKey), defaultScale);
+        if (prefs.contains(orientedKey)) {
+            return clampClockScale(prefs.getFloat(orientedKey, defaultScale));
+        }
+        return clampClockScale(prefs.getFloat(orientationKey(legacyKey), defaultScale));
     }
 
     private void applyClockScale() {
         if (clockPanel == null) return;
-        clockPanel.setPivotX(clockPanel.getWidth() / 2f);
-        clockPanel.setPivotY(clockPanel.getHeight() / 2f);
         if (pomodoroModeLayoutActive) {
-            clockPanel.setScaleX(1.0f);
-            clockPanel.setScaleY(1.0f);
             return;
         }
         if (clockSizesLinked) {
-            applyClockComponentSizes(1.0f, 1.0f, 1.0f);
-            clockPanel.setScaleX(clockScaleFactor);
-            clockPanel.setScaleY(clockScaleFactor);
+            applyClockComponentSizes(
+                    clockScaleFactor, clockScaleFactor, clockScaleFactor);
         } else {
-            clockPanel.setScaleX(1.0f);
-            clockPanel.setScaleY(1.0f);
             applyClockComponentSizes(timeScaleFactor, dateScaleFactor, weatherScaleFactor);
         }
     }
@@ -1930,10 +1983,9 @@ public final class PhotoClockActivity extends Activity {
     }
 
     private int findScaleTarget(float x, float y) {
-        if (isPointInView(x, y, photoTime)) return SCALE_TARGET_TIME;
-        if (isPointInView(x, y, compactWeatherRow)
-                || isPointInView(x, y, weatherRow)) return SCALE_TARGET_WEATHER;
-        if (isPointInView(x, y, photoDate)) return SCALE_TARGET_DATE;
+        if (isPointInView(x, y, timeBlock)) return SCALE_TARGET_TIME;
+        if (isPointInView(x, y, dateBlock)) return SCALE_TARGET_DATE;
+        if (isPointInView(x, y, weatherBlock)) return SCALE_TARGET_WEATHER;
         return SCALE_TARGET_NONE;
     }
 
@@ -1978,26 +2030,38 @@ public final class PhotoClockActivity extends Activity {
             }
         });
 
-        clockPanel.setOnLongClickListener(new View.OnLongClickListener() {
+        setupClockBlock(timeBlock, SCALE_TARGET_TIME);
+        setupClockBlock(dateBlock, SCALE_TARGET_DATE);
+        setupClockBlock(weatherBlock, SCALE_TARGET_WEATHER);
+    }
+
+    private void setupClockBlock(final AccessibleFrameLayout block, final int target) {
+        if (block == null) return;
+        block.setClickable(true);
+        block.setLongClickable(true);
+        block.setOnLongClickListener(new View.OnLongClickListener() {
             @Override
             public boolean onLongClick(View view) {
                 if (!isScalingClock && !pomodoroModeLayoutActive) {
                     isDraggingClock = true;
-                    clockPanel.setAlpha(0.75f);
+                    activeClockBlock = view;
+                    clockStartBlockX = getBlockBaseX(target);
+                    clockStartBlockY = getBlockBaseY(target);
+                    view.setAlpha(0.75f);
                     return true;
                 }
                 return false;
             }
         });
 
-        clockPanel.setOnClickListener(new View.OnClickListener() {
+        block.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
                 rootContainer.performClick();
             }
         });
 
-        clockPanel.setOnTouchListener(new View.OnTouchListener() {
+        block.setOnTouchListener(new View.OnTouchListener() {
             @Override
             public boolean onTouch(View view, MotionEvent event) {
                 resetImmersiveTimeout();
@@ -2007,9 +2071,8 @@ public final class PhotoClockActivity extends Activity {
                 }
 
                 if (event.getPointerCount() > 1 || isScalingClock) {
-                    if (isDraggingClock) {
-                        isDraggingClock = false;
-                        clockPanel.setAlpha(1.0f);
+                    if (isDraggingClock && activeClockBlock == view) {
+                        finishClockDrag(view, target, true);
                     }
                     return true;
                 }
@@ -2018,132 +2081,252 @@ public final class PhotoClockActivity extends Activity {
                     case MotionEvent.ACTION_DOWN:
                         touchDownRawX = event.getRawX();
                         touchDownRawY = event.getRawY();
-                        clockStartTransX = clockBaseTranslationX;
-                        clockStartTransY = clockBaseTranslationY;
-                        break;
+                        activeClockBlock = view;
+                        clockStartBlockX = getBlockBaseX(target);
+                        clockStartBlockY = getBlockBaseY(target);
+                        return false;
 
                     case MotionEvent.ACTION_MOVE:
-                        if (isDraggingClock) {
+                        if (isDraggingClock && activeClockBlock == view) {
                             float deltaX = event.getRawX() - touchDownRawX;
                             float deltaY = event.getRawY() - touchDownRawY;
-                            clampAndApplyTranslation(
-                                    clockStartTransX + deltaX,
-                                    clockStartTransY + deltaY);
+                            clampAndApplyBlockTranslation(target,
+                                    clockStartBlockX + deltaX,
+                                    clockStartBlockY + deltaY);
                             return true;
                         }
-                        break;
+                        return false;
 
                     case MotionEvent.ACTION_UP:
                         if (!isDraggingClock) {
                             view.performClick();
                             return true;
                         }
+                        finishClockDrag(view, target, true);
+                        return true;
+
                     case MotionEvent.ACTION_CANCEL:
                         if (isDraggingClock) {
-                            isDraggingClock = false;
-                            lastClockDragEndTime = SystemClock.elapsedRealtime();
-                            clockPanel.setAlpha(1.0f);
-                            saveClockPositionRatio();
+                            finishClockDrag(view, target, true);
                             return true;
                         }
-                        break;
+                        return false;
                 }
                 return false;
             }
         });
     }
 
-    private float getClockDefaultLeft() {
-        return rootContainer.getWidth() - clockPanel.getWidth() - dp(16);
+    private void finishClockDrag(View view, int target, boolean save) {
+        if (view != null) view.setAlpha(1.0f);
+        if (save) saveClockPosition(target);
+        isDraggingClock = false;
+        activeClockBlock = null;
+        lastClockDragEndTime = SystemClock.elapsedRealtime();
     }
 
-    private float getClockDefaultTop() {
-        return rootContainer.getHeight() - clockPanel.getHeight() - dp(16);
+    private FrameLayout.LayoutParams clockBlockLayoutParams() {
+        return new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                Gravity.TOP | Gravity.START);
     }
 
-    private void clampAndApplyTranslation(float targetTransX, float targetTransY) {
-        if (rootContainer == null || clockPanel == null) {
-            return;
+    private AccessibleFrameLayout blockForTarget(int target) {
+        if (target == SCALE_TARGET_TIME) return timeBlock;
+        if (target == SCALE_TARGET_DATE) return dateBlock;
+        if (target == SCALE_TARGET_WEATHER) return weatherBlock;
+        return null;
+    }
+
+    private float getBlockBaseX(int target) {
+        if (target == SCALE_TARGET_TIME) return timeBlockBaseX;
+        if (target == SCALE_TARGET_DATE) return dateBlockBaseX;
+        if (target == SCALE_TARGET_WEATHER) return weatherBlockBaseX;
+        return 0.0f;
+    }
+
+    private float getBlockBaseY(int target) {
+        if (target == SCALE_TARGET_TIME) return timeBlockBaseY;
+        if (target == SCALE_TARGET_DATE) return dateBlockBaseY;
+        if (target == SCALE_TARGET_WEATHER) return weatherBlockBaseY;
+        return 0.0f;
+    }
+
+    private void setBlockBasePosition(int target, float x, float y) {
+        if (target == SCALE_TARGET_TIME) {
+            timeBlockBaseX = x;
+            timeBlockBaseY = y;
+        } else if (target == SCALE_TARGET_DATE) {
+            dateBlockBaseX = x;
+            dateBlockBaseY = y;
+        } else if (target == SCALE_TARGET_WEATHER) {
+            weatherBlockBaseX = x;
+            weatherBlockBaseY = y;
         }
+    }
+
+    private void clampAndApplyBlockTranslation(int target, float targetLeft, float targetTop) {
+        AccessibleFrameLayout block = blockForTarget(target);
+        if (rootContainer == null || block == null) return;
         int rootW = rootContainer.getWidth();
         int rootH = rootContainer.getHeight();
-        int clockW = clockPanel.getWidth();
-        int clockH = clockPanel.getHeight();
-        if (rootW <= 0 || rootH <= 0 || clockW <= 0 || clockH <= 0) {
-            clockBaseTranslationX = targetTransX;
-            clockBaseTranslationY = targetTransY;
+        int blockW = block.getWidth();
+        int blockH = block.getHeight();
+        if (rootW <= 0 || rootH <= 0) {
+            setBlockBasePosition(target, targetLeft, targetTop);
+            applyBlockTranslation(target);
+            return;
+        }
+
+        if (blockW <= 0 || blockH <= 0) {
+            setBlockBasePosition(target, targetLeft, targetTop);
             applyClockTranslation();
             return;
         }
 
-        float defaultLeft = getClockDefaultLeft();
-        float defaultTop = getClockDefaultTop();
-
-        float minTransX = -defaultLeft + dp(12);
-        float maxTransX = dp(16);
-        float minTransY = -defaultTop + dp(12);
-        float maxTransY = dp(16);
-
-        clockBaseTranslationX = Math.max(minTransX, Math.min(maxTransX, targetTransX));
-        clockBaseTranslationY = Math.max(minTransY, Math.min(maxTransY, targetTransY));
-        applyClockTranslation();
+        float centerX = ClockPositionPolicy.clampCenter(
+                targetLeft + blockW / 2.0f, blockW, rootW, dp(12));
+        float centerY = ClockPositionPolicy.clampCenter(
+                targetTop + blockH / 2.0f, blockH, rootH, dp(12));
+        setBlockBasePosition(target, centerX - blockW / 2.0f, centerY - blockH / 2.0f);
+        applyBlockTranslation(target);
     }
 
-    private void saveClockPositionRatio() {
-        if (rootContainer == null || clockPanel == null) {
-            return;
-        }
+    private void saveClockPosition(int target) {
+        AccessibleFrameLayout block = blockForTarget(target);
+        if (rootContainer == null || block == null || prefs == null) return;
         int rootW = rootContainer.getWidth();
         int rootH = rootContainer.getHeight();
-        int clockW = clockPanel.getWidth();
-        int clockH = clockPanel.getHeight();
-        if (rootW <= clockW || rootH <= clockH) {
+        if (rootW <= 0 || rootH <= 0) {
             return;
         }
 
-        float currentLeft = getClockDefaultLeft() + clockBaseTranslationX;
-        float currentTop = getClockDefaultTop() + clockBaseTranslationY;
-
         prefs.edit()
-                .putFloat(orientationKey(CLOCK_POS_X_RATIO), currentLeft / (float) (rootW - clockW))
-                .putFloat(orientationKey(CLOCK_POS_Y_RATIO), currentTop / (float) (rootH - clockH))
+                .putFloat(orientationPositionKey(target, true),
+                        ClockPositionPolicy.ratioFromCenter(
+                                getBlockBaseX(target) + block.getWidth() / 2.0f, rootW))
+                .putFloat(orientationPositionKey(target, false),
+                        ClockPositionPolicy.ratioFromCenter(
+                                getBlockBaseY(target) + block.getHeight() / 2.0f, rootH))
+                .putInt(CLOCK_LAYOUT_VERSION_KEY, CLOCK_LAYOUT_VERSION)
                 .apply();
     }
 
     private void restoreClockPosition() {
-        float ratioX = prefs.getFloat(
-                orientationKey(CLOCK_POS_X_RATIO),
-                0.95f);
-        float ratioY = prefs.getFloat(
-                orientationKey(CLOCK_POS_Y_RATIO),
-                0.90f);
-        if (ratioX < 0.0f || ratioY < 0.0f || rootContainer == null || clockPanel == null) {
+        if (rootContainer == null || clockPanel == null || prefs == null) {
             return;
         }
         int rootW = rootContainer.getWidth();
         int rootH = rootContainer.getHeight();
-        int clockW = clockPanel.getWidth();
-        int clockH = clockPanel.getHeight();
-        if (rootW <= clockW || rootH <= clockH) {
+        if (rootW <= 0 || rootH <= 0) {
             return;
         }
 
-        float defaultLeft = getClockDefaultLeft();
-        float defaultTop = getClockDefaultTop();
-        clampAndApplyTranslation(ratioX * (rootW - clockW) - defaultLeft, ratioY * (rootH - clockH) - defaultTop);
-        applyClockScale();
+        if (!hasNewClockPositions()) {
+            migrateLegacyClockPositions();
+        }
+        restoreBlockPosition(SCALE_TARGET_TIME, rootW, rootH);
+        restoreBlockPosition(SCALE_TARGET_DATE, rootW, rootH);
+        restoreBlockPosition(SCALE_TARGET_WEATHER, rootW, rootH);
     }
 
     private void applyClockTranslation() {
-        if (clockPanel != null) {
-            if (pomodoroModeLayoutActive) {
-                clockPanel.setTranslationX(0.0f);
-                clockPanel.setTranslationY(0.0f);
-            } else {
-                clockPanel.setTranslationX(clockBaseTranslationX + burnInOffsetX);
-                clockPanel.setTranslationY(clockBaseTranslationY + burnInOffsetY);
-            }
+        applyBlockTranslation(SCALE_TARGET_TIME);
+        applyBlockTranslation(SCALE_TARGET_DATE);
+        applyBlockTranslation(SCALE_TARGET_WEATHER);
+    }
+
+    private void applyBlockTranslation(int target) {
+        AccessibleFrameLayout block = blockForTarget(target);
+        if (block == null) return;
+        float offsetX = pomodoroModeLayoutActive ? 0.0f : burnInOffsetX;
+        float offsetY = pomodoroModeLayoutActive ? 0.0f : burnInOffsetY;
+        block.setTranslationX(getBlockBaseX(target) + offsetX);
+        block.setTranslationY(getBlockBaseY(target) + offsetY);
+    }
+
+    private void restoreBlockPosition(int target, int rootW, int rootH) {
+        AccessibleFrameLayout block = blockForTarget(target);
+        if (block == null) return;
+        float ratioX = prefs.getFloat(orientationPositionKey(target, true),
+                defaultPositionRatio(target, true));
+        float ratioY = prefs.getFloat(orientationPositionKey(target, false),
+                defaultPositionRatio(target, false));
+        float left = ClockPositionPolicy.centerFromRatio(ratioX, rootW)
+                - block.getWidth() / 2.0f;
+        float top = ClockPositionPolicy.centerFromRatio(ratioY, rootH)
+                - block.getHeight() / 2.0f;
+        clampAndApplyBlockTranslation(target, left, top);
+    }
+
+    private boolean hasNewClockPositions() {
+        if (prefs.getInt(CLOCK_LAYOUT_VERSION_KEY, 0) >= CLOCK_LAYOUT_VERSION) {
+            return true;
         }
+        return prefs.contains(orientationPositionKey(SCALE_TARGET_TIME, true))
+                || prefs.contains(orientationPositionKey(SCALE_TARGET_DATE, true))
+                || prefs.contains(orientationPositionKey(SCALE_TARGET_WEATHER, true));
+    }
+
+    private void migrateLegacyClockPositions() {
+        float legacyX = ClockPositionPolicy.validRatio(
+                prefs.getFloat(orientationKey(CLOCK_POS_X_RATIO), DEFAULT_DATE_X_RATIO),
+                DEFAULT_DATE_X_RATIO);
+        float legacyY = ClockPositionPolicy.validRatio(
+                prefs.getFloat(orientationKey(CLOCK_POS_Y_RATIO), DEFAULT_DATE_Y_RATIO),
+                DEFAULT_DATE_Y_RATIO);
+        prefs.edit()
+                .putFloat(orientationPositionKey(SCALE_TARGET_TIME, true), legacyX)
+                .putFloat(orientationPositionKey(SCALE_TARGET_TIME, false),
+                        ClockPositionPolicy.validRatio(legacyY - 0.12f, DEFAULT_TIME_Y_RATIO))
+                .putFloat(orientationPositionKey(SCALE_TARGET_DATE, true), legacyX)
+                .putFloat(orientationPositionKey(SCALE_TARGET_DATE, false), legacyY)
+                .putFloat(orientationPositionKey(SCALE_TARGET_WEATHER, true), legacyX)
+                .putFloat(orientationPositionKey(SCALE_TARGET_WEATHER, false),
+                        ClockPositionPolicy.validRatio(legacyY + 0.08f, DEFAULT_WEATHER_Y_RATIO))
+                .putInt(CLOCK_LAYOUT_VERSION_KEY, CLOCK_LAYOUT_VERSION)
+                .apply();
+    }
+
+    private String orientationPositionKey(int target, boolean x) {
+        String base;
+        if (target == SCALE_TARGET_TIME) {
+            base = x ? CLOCK_TIME_POS_X_RATIO : CLOCK_TIME_POS_Y_RATIO;
+        } else if (target == SCALE_TARGET_DATE) {
+            base = x ? CLOCK_DATE_POS_X_RATIO : CLOCK_DATE_POS_Y_RATIO;
+        } else {
+            base = x ? CLOCK_WEATHER_POS_X_RATIO : CLOCK_WEATHER_POS_Y_RATIO;
+        }
+        return orientationKey(base);
+    }
+
+    private float defaultPositionRatio(int target, boolean x) {
+        if (target == SCALE_TARGET_TIME) return x ? DEFAULT_TIME_X_RATIO : DEFAULT_TIME_Y_RATIO;
+        if (target == SCALE_TARGET_DATE) return x ? DEFAULT_DATE_X_RATIO : DEFAULT_DATE_Y_RATIO;
+        return x ? DEFAULT_WEATHER_X_RATIO : DEFAULT_WEATHER_Y_RATIO;
+    }
+
+    public static void resetClockLayoutPreferences(SharedPreferences.Editor editor) {
+        if (editor == null) return;
+        editor.putInt(CLOCK_LAYOUT_VERSION_KEY, CLOCK_LAYOUT_VERSION)
+                .putBoolean(CLOCK_SIZES_LINKED, true);
+        putDefaultClockOrientation(editor, "_portrait");
+        putDefaultClockOrientation(editor, "_landscape");
+    }
+
+    private static void putDefaultClockOrientation(SharedPreferences.Editor editor,
+                                                    String suffix) {
+        editor.putFloat(CLOCK_SCALE_FACTOR + suffix, DEFAULT_CLOCK_SCALE)
+                .putFloat(CLOCK_TIME_SCALE_FACTOR + suffix, DEFAULT_CLOCK_SCALE)
+                .putFloat(CLOCK_DATE_SCALE_FACTOR + suffix, DEFAULT_CLOCK_SCALE)
+                .putFloat(CLOCK_WEATHER_SCALE_FACTOR + suffix, DEFAULT_CLOCK_SCALE)
+                .putFloat(CLOCK_TIME_POS_X_RATIO + suffix, DEFAULT_TIME_X_RATIO)
+                .putFloat(CLOCK_TIME_POS_Y_RATIO + suffix, DEFAULT_TIME_Y_RATIO)
+                .putFloat(CLOCK_DATE_POS_X_RATIO + suffix, DEFAULT_DATE_X_RATIO)
+                .putFloat(CLOCK_DATE_POS_Y_RATIO + suffix, DEFAULT_DATE_Y_RATIO)
+                .putFloat(CLOCK_WEATHER_POS_X_RATIO + suffix, DEFAULT_WEATHER_X_RATIO)
+                .putFloat(CLOCK_WEATHER_POS_Y_RATIO + suffix, DEFAULT_WEATHER_Y_RATIO);
     }
 
     private String orientationKey(String baseKey) {
@@ -2687,6 +2870,7 @@ public final class PhotoClockActivity extends Activity {
             photoTime.setTextSize(active ? 38 : 64);
             photoTime.setAlpha(1.0f);
         }
+        updateTimeBlockVisibility();
         if (photoDate != null) photoDate.setTextSize(active ? 17 : 24);
         if (dateRow != null) dateRow.setVisibility(View.VISIBLE);
         if (compactWeatherTemperature != null) compactWeatherTemperature.setTextSize(active ? 17 : 18);
@@ -2695,6 +2879,7 @@ public final class PhotoClockActivity extends Activity {
         if (compactWeatherIcon != null) resizeView(compactWeatherIcon, active ? 19 : 22, active ? 19 : 22);
         if (weatherIcon != null) resizeView(weatherIcon, active ? 22 : 30, active ? 22 : 30);
         if (alarmRow != null) alarmRow.setVisibility(active ? View.GONE : alarmRow.getVisibility());
+        updateDateBlockVisibility();
         int dimColor = Color.argb(120, 100, 100, 100);
         if (photoTime != null) {
             photoTime.setTextColor(isNightSleepActive ? dimColor : Color.WHITE);
@@ -2763,10 +2948,11 @@ public final class PhotoClockActivity extends Activity {
         if (pomodoroRow.getParent() instanceof android.view.ViewGroup) {
             ((android.view.ViewGroup) pomodoroRow.getParent()).removeView(pomodoroRow);
         }
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT);
-        params.setMargins(0, dp(3), 0, 0);
+        FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                Gravity.TOP | Gravity.END);
+        params.setMargins(dp(28), dp(28), dp(16), dp(16));
         clockPanel.addView(pomodoroRow, 1, params);
     }
 
@@ -2781,12 +2967,22 @@ public final class PhotoClockActivity extends Activity {
 
     private void updateAlarmIndicator() {
         if (alarmRow == null || alarmTimeText == null) return;
+        int previousVisibility = alarmRow.getVisibility();
         String alarmTime = AlarmHelper.getNextAlarmTimeString(this);
         if (alarmTime != null) {
             alarmTimeText.setText(alarmTime);
             alarmRow.setVisibility(View.VISIBLE);
         } else {
             alarmRow.setVisibility(View.GONE);
+        }
+        updateDateBlockVisibility();
+        if (previousVisibility != alarmRow.getVisibility() && rootContainer != null) {
+            rootContainer.post(new Runnable() {
+                @Override
+                public void run() {
+                    restoreClockPosition();
+                }
+            });
         }
     }
 
@@ -2895,12 +3091,22 @@ public final class PhotoClockActivity extends Activity {
         boolean compact = weatherCompactMode && !weatherShowLocation;
         compactWeatherRow.setVisibility(compact ? View.VISIBLE : View.GONE);
         weatherRow.setVisibility(compact ? View.GONE : View.VISIBLE);
-        if (clockPanel != null) clockPanel.requestLayout();
+        updateWeatherBlockVisibility();
+        if (clockPanel != null) {
+            clockPanel.requestLayout();
+            clockPanel.post(new Runnable() {
+                @Override
+                public void run() {
+                    restoreClockPosition();
+                }
+            });
+        }
     }
 
     private void hideWeatherRows() {
         if (compactWeatherRow != null) compactWeatherRow.setVisibility(View.GONE);
         if (weatherRow != null) weatherRow.setVisibility(View.GONE);
+        updateWeatherBlockVisibility();
     }
 
     private double parseDouble(String value) {
