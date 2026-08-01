@@ -30,6 +30,15 @@ public final class WeatherClient {
         return nfd.replaceAll("\\p{InCombiningDiacriticalMarks}+", "");
     }
 
+    /** Returns the first, most local part of a comma-separated location label. */
+    public static String minimalLocationName(String locationName) {
+        if (locationName == null) return "";
+        String value = locationName.trim();
+        int separator = value.indexOf(',');
+        if (separator >= 0) value = value.substring(0, separator).trim();
+        return value;
+    }
+
     public static final class LocationResult {
         public final String displayName;
         public final double latitude;

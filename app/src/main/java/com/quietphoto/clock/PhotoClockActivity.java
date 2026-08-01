@@ -247,6 +247,7 @@ public final class PhotoClockActivity extends Activity {
     private int photoDisplayMode;
     private boolean weatherEnabled;
     private boolean weatherShowLocation;
+    private boolean weatherMinimalLocation;
     private boolean weatherCompactMode = true;
     private String weatherLocationName = "";
     private double weatherLatitude = Double.NaN;
@@ -278,6 +279,14 @@ public final class PhotoClockActivity extends Activity {
     private View activeClockBlock;
     private float clockStartBlockX;
     private float clockStartBlockY;
+    private float clockStartTimeBlockX;
+    private float clockStartTimeBlockY;
+    private float clockStartDateBlockX;
+    private float clockStartDateBlockY;
+    private float clockStartWeatherBlockX;
+    private float clockStartWeatherBlockY;
+    private float clockStartGroupPivotX;
+    private float clockStartGroupPivotY;
     private float timeBlockBaseX;
     private float timeBlockBaseY;
     private float dateBlockBaseX;
@@ -293,6 +302,7 @@ public final class PhotoClockActivity extends Activity {
     private final RectF avoidTimeRect = new RectF();
     private final RectF avoidDateRect = new RectF();
     private final RectF avoidWeatherRect = new RectF();
+    private final RectF clockGroupDragBounds = new RectF();
     private final int[] avoidLayoutOrder = new int[3];
     private float burnInOffsetX;
     private float burnInOffsetY;
@@ -1195,6 +1205,8 @@ public final class PhotoClockActivity extends Activity {
                 prefs.getInt(SettingsActivity.PHOTO_DISPLAY_MODE, 0)));
         weatherEnabled = prefs.getBoolean(SettingsActivity.WEATHER_ENABLED, false);
         weatherShowLocation = prefs.getBoolean(SettingsActivity.WEATHER_SHOW_LOCATION, false);
+        weatherMinimalLocation = prefs.getBoolean(
+                SettingsActivity.WEATHER_MINIMAL_LOCATION, false);
         weatherCompactMode = prefs.getBoolean(SettingsActivity.WEATHER_COMPACT_MODE, true);
         weatherLocationName = prefs.getString(SettingsActivity.WEATHER_LOCATION_NAME, "");
         weatherLatitude = parseDouble(prefs.getString(SettingsActivity.WEATHER_LATITUDE, null));
@@ -2328,9 +2340,13 @@ public final class PhotoClockActivity extends Activity {
                 if (!isScalingClock && !pomodoroModeLayoutActive) {
                     isDraggingClock = true;
                     activeClockBlock = view;
-                    clockStartBlockX = getBlockBaseX(target);
-                    clockStartBlockY = getBlockBaseY(target);
-                    view.setAlpha(0.75f);
+                    if (clockSizeMode == CLOCK_SIZE_MODE_GROUP) {
+                        setClockBlocksAlpha(0.75f);
+                    } else {
+                        clockStartBlockX = getBlockBaseX(target);
+                        clockStartBlockY = getBlockBaseY(target);
+                        view.setAlpha(0.75f);
+                    }
                     return true;
                 }
                 return false;
@@ -2365,20 +2381,26 @@ public final class PhotoClockActivity extends Activity {
                         touchDownRawX = event.getRawX();
                         touchDownRawY = event.getRawY();
                         activeClockBlock = view;
-                        clockStartBlockX = getBlockBaseX(target);
-                        clockStartBlockY = getBlockBaseY(target);
+                        if (clockSizeMode == CLOCK_SIZE_MODE_GROUP) {
+                            captureClockGroupDragStart();
+                        } else {
+                            clockStartBlockX = getBlockBaseX(target);
+                            clockStartBlockY = getBlockBaseY(target);
+                        }
                         return false;
 
                     case MotionEvent.ACTION_MOVE:
                         if (isDraggingClock && activeClockBlock == view) {
-                            float interactionScale = getClockInteractionScale();
-                            float deltaX = (event.getRawX() - touchDownRawX)
-                                    / interactionScale;
-                            float deltaY = (event.getRawY() - touchDownRawY)
-                                    / interactionScale;
-                            clampAndApplyBlockTranslation(target,
-                                    clockStartBlockX + deltaX,
-                                    clockStartBlockY + deltaY);
+                            float deltaX = event.getRawX() - touchDownRawX;
+                            float deltaY = event.getRawY() - touchDownRawY;
+                            if (clockSizeMode == CLOCK_SIZE_MODE_GROUP) {
+                                clampAndApplyClockGroupTranslation(deltaX, deltaY);
+                            } else {
+                                float interactionScale = getClockInteractionScale();
+                                clampAndApplyBlockTranslation(target,
+                                        clockStartBlockX + deltaX / interactionScale,
+                                        clockStartBlockY + deltaY / interactionScale);
+                            }
                             return true;
                         }
                         return false;
@@ -2404,11 +2426,17 @@ public final class PhotoClockActivity extends Activity {
     }
 
     private void finishClockDrag(View view, int target, boolean save) {
-        if (view != null) view.setAlpha(1.0f);
+        if (clockSizeMode == CLOCK_SIZE_MODE_GROUP) {
+            setClockBlocksAlpha(1.0f);
+        } else if (view != null) {
+            view.setAlpha(1.0f);
+        }
         if (save) {
             if (clockSizeMode == CLOCK_SIZE_MODE_AVOID) {
                 avoidLayoutAnchorTarget = target;
                 scheduleAvoidingClockLayout();
+            } else if (clockSizeMode == CLOCK_SIZE_MODE_GROUP) {
+                saveAllClockPositions();
             } else {
                 saveClockPosition(target);
             }
@@ -2416,6 +2444,112 @@ public final class PhotoClockActivity extends Activity {
         isDraggingClock = false;
         activeClockBlock = null;
         lastClockDragEndTime = SystemClock.elapsedRealtime();
+    }
+
+    private void setClockBlocksAlpha(float alpha) {
+        if (timeBlock != null) timeBlock.setAlpha(alpha);
+        if (dateBlock != null) dateBlock.setAlpha(alpha);
+        if (weatherBlock != null) weatherBlock.setAlpha(alpha);
+    }
+
+    private void captureClockGroupDragStart() {
+        if (!clockGroupPivotValid) {
+            computeClockGroupPivot();
+        }
+        clockStartTimeBlockX = timeBlockBaseX;
+        clockStartTimeBlockY = timeBlockBaseY;
+        clockStartDateBlockX = dateBlockBaseX;
+        clockStartDateBlockY = dateBlockBaseY;
+        clockStartWeatherBlockX = weatherBlockBaseX;
+        clockStartWeatherBlockY = weatherBlockBaseY;
+        clockStartGroupPivotX = clockGroupPivotX;
+        clockStartGroupPivotY = clockGroupPivotY;
+    }
+
+    private void clampAndApplyClockGroupTranslation(float deltaX, float deltaY) {
+        if (rootContainer == null || clockPanel == null) return;
+        if (rootContainer.getWidth() <= 0 || rootContainer.getHeight() <= 0) return;
+
+        fillClockGroupBounds(
+                clockStartTimeBlockX, clockStartTimeBlockY,
+                clockStartDateBlockX, clockStartDateBlockY,
+                clockStartWeatherBlockX, clockStartWeatherBlockY,
+                clockStartGroupPivotX, clockStartGroupPivotY,
+                clockPanel.getScaleX());
+        float margin = dp(12);
+        deltaX = clampGroupDelta(deltaX, clockGroupDragBounds.left,
+                clockGroupDragBounds.right,
+                rootContainer.getWidth(), margin);
+        deltaY = clampGroupDelta(deltaY, clockGroupDragBounds.top,
+                clockGroupDragBounds.bottom,
+                rootContainer.getHeight(), margin);
+
+        setBlockBasePosition(SCALE_TARGET_TIME,
+                clockStartTimeBlockX + deltaX, clockStartTimeBlockY + deltaY);
+        setBlockBasePosition(SCALE_TARGET_DATE,
+                clockStartDateBlockX + deltaX, clockStartDateBlockY + deltaY);
+        setBlockBasePosition(SCALE_TARGET_WEATHER,
+                clockStartWeatherBlockX + deltaX, clockStartWeatherBlockY + deltaY);
+        clockGroupPivotX = clockStartGroupPivotX + deltaX;
+        clockGroupPivotY = clockStartGroupPivotY + deltaY;
+        clockGroupPivotValid = true;
+        applyClockTranslation();
+        applyClockGroupTransform();
+    }
+
+    private float clampGroupDelta(float delta, float minBound, float maxBound,
+                                  float containerSize, float margin) {
+        float minDelta = margin - minBound;
+        float maxDelta = containerSize - margin - maxBound;
+        if (minDelta > maxDelta) {
+            return (containerSize / 2.0f) - ((minBound + maxBound) / 2.0f);
+        }
+        return Math.max(minDelta, Math.min(maxDelta, delta));
+    }
+
+    /** Fills the initial transformed group bounds without allocating during a drag. */
+    private void fillClockGroupBounds(float timeX, float timeY,
+                                      float dateX, float dateY,
+                                      float weatherX, float weatherY,
+                                      float pivotX, float pivotY, float scale) {
+        clockGroupDragBounds.setEmpty();
+        for (int target = SCALE_TARGET_TIME; target <= SCALE_TARGET_WEATHER; target++) {
+            AccessibleFrameLayout block = blockForTarget(target);
+            if (block == null || block.getVisibility() != View.VISIBLE
+                    || block.getWidth() <= 0 || block.getHeight() <= 0) {
+                continue;
+            }
+            float baseX = getClockGroupStartX(target, timeX, dateX, weatherX);
+            float baseY = getClockGroupStartY(target, timeY, dateY, weatherY);
+            float left = pivotX + scale * (baseX - pivotX);
+            float top = pivotY + scale * (baseY - pivotY);
+            float right = pivotX + scale * (baseX + block.getWidth() - pivotX);
+            float bottom = pivotY + scale * (baseY + block.getHeight() - pivotY);
+            if (clockGroupDragBounds.isEmpty()) {
+                clockGroupDragBounds.set(left, top, right, bottom);
+            } else {
+                clockGroupDragBounds.union(left, top, right, bottom);
+            }
+        }
+        if (clockGroupDragBounds.isEmpty()) {
+            float centerX = rootContainer.getWidth() / 2.0f;
+            float centerY = rootContainer.getHeight() / 2.0f;
+            clockGroupDragBounds.set(centerX, centerY, centerX, centerY);
+        }
+    }
+
+    private float getClockGroupStartX(int target, float timeX, float dateX,
+                                      float weatherX) {
+        if (target == SCALE_TARGET_TIME) return timeX;
+        if (target == SCALE_TARGET_DATE) return dateX;
+        return weatherX;
+    }
+
+    private float getClockGroupStartY(int target, float timeY, float dateY,
+                                      float weatherY) {
+        if (target == SCALE_TARGET_TIME) return timeY;
+        if (target == SCALE_TARGET_DATE) return dateY;
+        return weatherY;
     }
 
     private float getClockInteractionScale() {
@@ -3456,9 +3590,13 @@ public final class PhotoClockActivity extends Activity {
         boolean isDay = prefs.getBoolean(SettingsActivity.WEATHER_IS_DAY, true);
         weatherTemperature.setText(String.format(Locale.US, "%d°", temperature));
         compactWeatherTemperature.setText(String.format(Locale.US, "%d°", temperature));
-        weatherLocation.setText(WeatherClient.removeAccents(weatherLocationName));
+        String displayedLocation = weatherMinimalLocation
+                ? WeatherClient.minimalLocationName(weatherLocationName)
+                : weatherLocationName;
+        weatherLocation.setText(WeatherClient.removeAccents(displayedLocation));
         weatherLocation.setVisibility(
-                weatherShowLocation && weatherLocationName.length() > 0 ? View.VISIBLE : View.GONE);
+                weatherShowLocation && displayedLocation.length() > 0
+                        ? View.VISIBLE : View.GONE);
         weatherIcon.setWeather(code, isDay);
         compactWeatherIcon.setWeather(code, isDay);
 

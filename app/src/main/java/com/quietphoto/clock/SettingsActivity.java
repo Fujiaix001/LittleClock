@@ -80,6 +80,7 @@ public final class SettingsActivity extends Activity {
     public static final String HIDDEN_PHOTOS = "hidden_photos";
     public static final String WEATHER_ENABLED = "weather_enabled";
     public static final String WEATHER_SHOW_LOCATION = "weather_show_location";
+    public static final String WEATHER_MINIMAL_LOCATION = "weather_minimal_location";
     public static final String WEATHER_COMPACT_MODE = "weather_compact_mode";
     public static final String WEATHER_LOCATION_NAME = "weather_location_name";
     public static final String WEATHER_LATITUDE = "weather_latitude";
@@ -138,6 +139,7 @@ public final class SettingsActivity extends Activity {
     private boolean favoritesOnly;
     private boolean weatherEnabled;
     private boolean weatherShowLocation;
+    private boolean weatherMinimalLocation;
     private boolean weatherCompactMode = true;
     private String weatherLocationName = "";
     private String weatherTimezone = "auto";
@@ -178,6 +180,7 @@ public final class SettingsActivity extends Activity {
     private CheckBox currentFolderCheck;
     private CheckBox weatherEnabledCheck;
     private CheckBox weatherLocationCheck;
+    private CheckBox weatherMinimalLocationCheck;
     private CheckBox weatherCompactCheck;
     private CheckBox alarmEnabledCheck;
     private CheckBox alarmRepeatCheck;
@@ -257,6 +260,7 @@ public final class SettingsActivity extends Activity {
         favoritesOnly = prefs.getBoolean(FAVORITES_ONLY, false);
         weatherEnabled = prefs.getBoolean(WEATHER_ENABLED, false);
         weatherShowLocation = prefs.getBoolean(WEATHER_SHOW_LOCATION, false);
+        weatherMinimalLocation = prefs.getBoolean(WEATHER_MINIMAL_LOCATION, false);
         weatherCompactMode = prefs.getBoolean(WEATHER_COMPACT_MODE, true);
         weatherLocationName = prefs.getString(WEATHER_LOCATION_NAME, "");
         weatherTimezone = prefs.getString(WEATHER_TIMEZONE, "auto");
@@ -585,6 +589,12 @@ public final class SettingsActivity extends Activity {
         weatherLocationCheck = checkBox("顯示英文地名", weatherShowLocation);
         weatherOptions.addView(weatherLocationCheck);
 
+        weatherMinimalLocationCheck = checkBox(
+                "地名只顯示最小單位", weatherMinimalLocation);
+        weatherMinimalLocationCheck.setEnabled(weatherShowLocation);
+        weatherMinimalLocationCheck.setAlpha(weatherShowLocation ? 1.0f : 0.45f);
+        weatherOptions.addView(weatherMinimalLocationCheck);
+
         weatherFontSpinner = addSpinner(
                 weatherOptions,
                 "天氣字型",
@@ -602,6 +612,9 @@ public final class SettingsActivity extends Activity {
                 boolean available = !weatherLocationCheck.isChecked();
                 weatherCompactCheck.setEnabled(available);
                 weatherCompactCheck.setAlpha(available ? 1.0f : 0.45f);
+                boolean minimalAvailable = weatherLocationCheck.isChecked();
+                weatherMinimalLocationCheck.setEnabled(minimalAvailable);
+                weatherMinimalLocationCheck.setAlpha(minimalAvailable ? 1.0f : 0.45f);
             }
         });
         TextView weatherCredit = text("天氣資料：Open-Meteo", 12, SECONDARY);
@@ -737,7 +750,7 @@ public final class SettingsActivity extends Activity {
                 new String[] {
                         "固定位置（可重疊）",
                         "自動避讓（原始效果）",
-                        "整體放大（保持間隔）"
+                        "群組放大（保持間隔、一起移動）"
                 },
                 clockSizeMode);
 
@@ -1671,6 +1684,8 @@ public final class SettingsActivity extends Activity {
                 .putBoolean(FAVORITES_ONLY, favoritesOnlyCheck.isChecked())
                 .putBoolean(WEATHER_ENABLED, weatherEnabledCheck.isChecked())
                 .putBoolean(WEATHER_SHOW_LOCATION, weatherLocationCheck.isChecked())
+                .putBoolean(WEATHER_MINIMAL_LOCATION,
+                        weatherMinimalLocationCheck.isChecked())
                 .putBoolean(WEATHER_COMPACT_MODE, weatherCompactCheck.isChecked())
                 .putString(WEATHER_LOCATION_NAME, weatherLocationName)
                 .putString(WEATHER_LATITUDE, Double.toString(weatherLatitude))
