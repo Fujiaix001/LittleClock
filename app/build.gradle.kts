@@ -6,7 +6,7 @@ plugins {
 
 val versionMajor = 4
 val versionMinor = 0
-val basePatch = 16
+val basePatch = 17
 val appVersionCode = (versionMajor * 10_000) + (versionMinor * 100) + basePatch
 val releasePropertiesFile = rootProject.file("keystore.properties")
 val releaseProperties = Properties().apply {
