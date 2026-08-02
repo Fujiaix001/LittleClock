@@ -95,6 +95,8 @@ public final class PhotoClockActivity extends Activity {
     private static final String CLOCK_GROUP_PIVOT_X_RATIO = "clock_group_pivot_x_ratio";
     private static final String CLOCK_GROUP_PIVOT_Y_RATIO = "clock_group_pivot_y_ratio";
     private static final float DEFAULT_CLOCK_SCALE = 0.75f;
+    private static final float DEFAULT_GROUP_PANEL_X_RATIO = 0.95f;
+    private static final float DEFAULT_GROUP_PANEL_Y_RATIO = 0.90f;
     private static final float DEFAULT_TIME_X_RATIO = 0.86f;
     private static final float DEFAULT_TIME_Y_RATIO = 0.76f;
     private static final float DEFAULT_DATE_X_RATIO = 0.86f;
@@ -142,6 +144,8 @@ public final class PhotoClockActivity extends Activity {
     private ImageView photoImage;
     private TextView photoStatus;
     private AccessibleFrameLayout clockPanel;
+    /** The legacy .13-style single surface used by the linked group mode. */
+    private LinearLayout legacyClockPanel;
     private AccessibleFrameLayout timeBlock;
     private AccessibleFrameLayout dateBlock;
     private AccessibleFrameLayout weatherBlock;
@@ -279,14 +283,6 @@ public final class PhotoClockActivity extends Activity {
     private View activeClockBlock;
     private float clockStartBlockX;
     private float clockStartBlockY;
-    private float clockStartTimeBlockX;
-    private float clockStartTimeBlockY;
-    private float clockStartDateBlockX;
-    private float clockStartDateBlockY;
-    private float clockStartWeatherBlockX;
-    private float clockStartWeatherBlockY;
-    private float clockStartGroupPivotX;
-    private float clockStartGroupPivotY;
     private float timeBlockBaseX;
     private float timeBlockBaseY;
     private float dateBlockBaseX;
@@ -294,15 +290,16 @@ public final class PhotoClockActivity extends Activity {
     private float weatherBlockBaseX;
     private float weatherBlockBaseY;
     private int clockSizeMode = CLOCK_SIZE_MODE_OVERLAP;
-    private float clockGroupPivotX;
-    private float clockGroupPivotY;
-    private boolean clockGroupPivotValid;
+    private boolean legacyClockPanelActive;
+    private float legacyClockTranslationX;
+    private float legacyClockTranslationY;
+    private float legacyClockStartTranslationX;
+    private float legacyClockStartTranslationY;
     private boolean avoidLayoutScheduled;
     private int avoidLayoutAnchorTarget = SCALE_TARGET_NONE;
     private final RectF avoidTimeRect = new RectF();
     private final RectF avoidDateRect = new RectF();
     private final RectF avoidWeatherRect = new RectF();
-    private final RectF clockGroupDragBounds = new RectF();
     private final int[] avoidLayoutOrder = new int[3];
     private float burnInOffsetX;
     private float burnInOffsetY;
@@ -951,7 +948,8 @@ public final class PhotoClockActivity extends Activity {
         if (event == null) return false;
         return isTouchOnView(timeBlock, event)
                 || isTouchOnView(dateBlock, event)
-                || isTouchOnView(weatherBlock, event);
+                || isTouchOnView(weatherBlock, event)
+                || isTouchOnView(legacyClockPanel, event);
     }
 
     private void showPhotoActions() {
@@ -1212,6 +1210,7 @@ public final class PhotoClockActivity extends Activity {
         weatherLatitude = parseDouble(prefs.getString(SettingsActivity.WEATHER_LATITUDE, null));
         weatherLongitude = parseDouble(prefs.getString(SettingsActivity.WEATHER_LONGITUDE, null));
         loadClockScalePreferences(0.75f);
+        applyClockLayoutMode();
 
         favoritePhotos.clear();
         hiddenPhotos.clear();
@@ -1358,9 +1357,10 @@ public final class PhotoClockActivity extends Activity {
     private void updateDateBlockVisibility() {
         if (dateBlock == null) return;
         boolean visible = (photoDate != null && photoDate.getVisibility() == View.VISIBLE)
-                || (alarmRow != null && alarmRow.getVisibility() == View.VISIBLE);
+                || (alarmRow != null && alarmRow.getVisibility() == View.VISIBLE)
+                || (legacyClockPanelActive && compactWeatherRow != null
+                && compactWeatherRow.getVisibility() == View.VISIBLE);
         dateBlock.setVisibility(visible ? View.VISIBLE : View.GONE);
-        clockGroupPivotValid = false;
     }
 
     private void updateWeatherBlockVisibility() {
@@ -1368,12 +1368,22 @@ public final class PhotoClockActivity extends Activity {
         boolean visible = (compactWeatherRow != null
                 && compactWeatherRow.getVisibility() == View.VISIBLE)
                 || (weatherRow != null && weatherRow.getVisibility() == View.VISIBLE);
+        if (legacyClockPanelActive) {
+            // In the .13-style surface, compact weather lives beside the date.
+            visible = weatherRow != null && weatherRow.getVisibility() == View.VISIBLE;
+        }
         weatherBlock.setVisibility(visible ? View.VISIBLE : View.GONE);
-        clockGroupPivotValid = false;
     }
 
     private void applyClockBlockBackgrounds() {
         if (timeBlock == null || dateBlock == null || weatherBlock == null) return;
+        if (legacyClockPanelActive) {
+            clearClockBlockBackground(timeBlock);
+            clearClockBlockBackground(dateBlock);
+            clearClockBlockBackground(weatherBlock);
+            applyLegacyClockPanelBackground();
+            return;
+        }
         if (!clockBgEnabled) {
             clearClockBlockBackground(timeBlock);
             clearClockBlockBackground(dateBlock);
@@ -1388,6 +1398,24 @@ public final class PhotoClockActivity extends Activity {
         applyClockBlockBackground(timeBlock, bgColor);
         applyClockBlockBackground(dateBlock, bgColor);
         applyClockBlockBackground(weatherBlock, bgColor);
+    }
+
+    private void applyLegacyClockPanelBackground() {
+        if (legacyClockPanel == null) return;
+        if (!clockBgEnabled) {
+            legacyClockPanel.setBackground(null);
+            legacyClockPanel.setPadding(0, 0, 0, 0);
+            return;
+        }
+        int bgColor = isAdaptiveColorActive()
+                ? Color.argb(85, Color.red(currentDominantColor),
+                Color.green(currentDominantColor), Color.blue(currentDominantColor))
+                : Color.argb(65, 0, 0, 0);
+        GradientDrawable background = new GradientDrawable();
+        background.setColor(bgColor);
+        background.setCornerRadius(dp(10));
+        legacyClockPanel.setBackground(background);
+        legacyClockPanel.setPadding(dp(12), dp(4), dp(12), dp(6));
     }
 
     private void applyClockBlockBackground(View block, int color) {
@@ -1407,7 +1435,115 @@ public final class PhotoClockActivity extends Activity {
         if (timeBlock == null) return;
         timeBlock.setVisibility(photoTime != null
                 && photoTime.getVisibility() == View.VISIBLE ? View.VISIBLE : View.GONE);
-        clockGroupPivotValid = false;
+    }
+
+    /**
+     * Switches the linked-size mode to the original .13 single-panel model.
+     *
+     * The independent modes keep three frame blocks with saved coordinates. The linked mode
+     * intentionally uses one wrap-content vertical layout instead, so scaling and dragging act
+     * on the same surface that the original release used.
+     */
+    private void applyClockLayoutMode() {
+        if (clockPanel == null || legacyClockPanel == null) return;
+        boolean shouldUseLegacyPanel = clockSizeMode == CLOCK_SIZE_MODE_GROUP;
+        if (shouldUseLegacyPanel == legacyClockPanelActive) return;
+        if (shouldUseLegacyPanel) {
+            enterLegacyClockPanelMode();
+        } else {
+            exitLegacyClockPanelMode();
+        }
+    }
+
+    private void enterLegacyClockPanelMode() {
+        legacyClockPanelActive = true;
+        moveClockBlocksToLegacyPanel();
+        legacyClockTranslationX = 0.0f;
+        legacyClockTranslationY = 0.0f;
+        legacyClockPanel.setVisibility(View.VISIBLE);
+        applyLegacyClockTranslation();
+        updateDateBlockVisibility();
+        updateWeatherBlockVisibility();
+        applyClockBlockBackgrounds();
+    }
+
+    private void exitLegacyClockPanelMode() {
+        legacyClockPanelActive = false;
+        moveClockBlocksToIndependentPanel();
+        legacyClockPanel.setVisibility(View.GONE);
+        applyLegacyClockTranslation();
+        updateDateBlockVisibility();
+        updateWeatherBlockVisibility();
+        applyClockBlockBackgrounds();
+    }
+
+    private void moveClockBlocksToLegacyPanel() {
+        moveCompactWeatherRowToLegacyPanel();
+        moveBlockToParent(timeBlock, legacyClockPanel);
+        moveBlockToParent(dateBlock, legacyClockPanel);
+        moveBlockToParent(weatherBlock, legacyClockPanel);
+        resetBlockTranslation(timeBlock);
+        resetBlockTranslation(dateBlock);
+        resetBlockTranslation(weatherBlock);
+    }
+
+    private void moveClockBlocksToIndependentPanel() {
+        moveCompactWeatherRowToIndependentPanel();
+        moveBlockToParent(timeBlock, clockPanel);
+        moveBlockToParent(dateBlock, clockPanel);
+        moveBlockToParent(weatherBlock, clockPanel);
+        applyClockTranslation();
+    }
+
+    private void moveBlockToParent(View block, ViewGroup parent) {
+        if (block == null || parent == null) return;
+        if (block.getParent() == parent) return;
+        if (block.getParent() instanceof ViewGroup) {
+            ((ViewGroup) block.getParent()).removeView(block);
+        }
+        if (parent == legacyClockPanel) {
+            parent.addView(block, new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT));
+        } else {
+            parent.addView(block, clockBlockLayoutParams());
+        }
+    }
+
+    private void resetBlockTranslation(View block) {
+        if (block == null) return;
+        block.setTranslationX(0.0f);
+        block.setTranslationY(0.0f);
+    }
+
+    private void moveCompactWeatherRowToLegacyPanel() {
+        if (compactWeatherRow == null || dateRow == null) return;
+        if (compactWeatherRow.getParent() == dateRow) return;
+        if (compactWeatherRow.getParent() instanceof ViewGroup) {
+            ((ViewGroup) compactWeatherRow.getParent()).removeView(compactWeatherRow);
+        }
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+        params.gravity = Gravity.BOTTOM;
+        params.setMargins(0, 0, dp(9), dp(3));
+        dateRow.addView(compactWeatherRow, 0, params);
+    }
+
+    private void moveCompactWeatherRowToIndependentPanel() {
+        if (compactWeatherRow == null || weatherBlock == null) return;
+        if (compactWeatherRow.getParent() == weatherBlock) return;
+        if (compactWeatherRow.getParent() instanceof ViewGroup) {
+            ((ViewGroup) compactWeatherRow.getParent()).removeView(compactWeatherRow);
+        }
+        weatherBlock.addView(compactWeatherRow, compactWeatherBlockLayoutParams());
+    }
+
+    private FrameLayout.LayoutParams compactWeatherBlockLayoutParams() {
+        return new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                Gravity.CENTER);
     }
 
     private View buildInterface() {
@@ -1458,6 +1594,13 @@ public final class PhotoClockActivity extends Activity {
         clockPanel = new AccessibleFrameLayout(this);
         clockPanel.setClipChildren(false);
         clockPanel.setClipToPadding(false);
+
+        legacyClockPanel = new LinearLayout(this);
+        legacyClockPanel.setOrientation(LinearLayout.VERTICAL);
+        legacyClockPanel.setGravity(Gravity.CENTER_HORIZONTAL);
+        legacyClockPanel.setClipChildren(false);
+        legacyClockPanel.setClipToPadding(false);
+        legacyClockPanel.setVisibility(View.GONE);
 
         timeBlock = new AccessibleFrameLayout(this);
         timeBlock.setContentDescription("時間區塊");
@@ -1615,6 +1758,13 @@ public final class PhotoClockActivity extends Activity {
         rootContainer.addView(clockPanel, new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 FrameLayout.LayoutParams.MATCH_PARENT));
+
+        FrameLayout.LayoutParams legacyClockParams = new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                Gravity.BOTTOM | Gravity.END);
+        legacyClockParams.setMargins(dp(28), dp(28), dp(16), dp(16));
+        rootContainer.addView(legacyClockPanel, legacyClockParams);
 
         pomodoroFocusPanel = new FrameLayout(this);
         pomodoroFocusPanel.setVisibility(View.GONE);
@@ -1967,13 +2117,6 @@ public final class PhotoClockActivity extends Activity {
             clockSizeMode = ClockSizeModePolicy.fromLegacyLinked(legacyLinked);
         }
         clockSizesLinked = ClockSizeModePolicy.usesLinkedScale(clockSizeMode);
-        if (clockSizeMode != CLOCK_SIZE_MODE_GROUP) {
-            prefs.edit()
-                    .remove(orientationKey(CLOCK_GROUP_PIVOT_X_RATIO))
-                    .remove(orientationKey(CLOCK_GROUP_PIVOT_Y_RATIO))
-                    .apply();
-        }
-
         float loadedTimeScale = loadComponentScale(
                 CLOCK_TIME_SCALE_FACTOR, LEGACY_TIME_SCALE_FACTOR, clockScaleFactor);
         float loadedDateScale = loadComponentScale(
@@ -1993,7 +2136,6 @@ public final class PhotoClockActivity extends Activity {
             dateScaleFactor = loadedDateScale;
             weatherScaleFactor = loadedWeatherScale;
         }
-        clockGroupPivotValid = false;
     }
 
     private float loadComponentScale(String key, String legacyKey, float defaultScale) {
@@ -2009,14 +2151,18 @@ public final class PhotoClockActivity extends Activity {
         if (pomodoroModeLayoutActive) {
             clockPanel.setScaleX(1.0f);
             clockPanel.setScaleY(1.0f);
+            if (legacyClockPanel != null) {
+                legacyClockPanel.setScaleX(1.0f);
+                legacyClockPanel.setScaleY(1.0f);
+            }
             return;
         }
 
         if (clockSizeMode == CLOCK_SIZE_MODE_GROUP) {
-            // One parent transform scales the complete clock surface, including the gaps.
-            // This keeps the three blocks in the same relative arrangement.
+            // The linked mode deliberately scales the original wrap-content panel, not the
+            // independent blocks' full-screen coordinate system.
             applyClockComponentSizes(1.0f, 1.0f, 1.0f);
-            applyClockGroupTransform();
+            applyLegacyClockScale();
             return;
         }
 
@@ -2029,51 +2175,6 @@ public final class PhotoClockActivity extends Activity {
             applyClockComponentSizes(timeScaleFactor, dateScaleFactor, weatherScaleFactor);
             scheduleAvoidingClockLayout();
         }
-    }
-
-    private void applyClockGroupTransform() {
-        if (clockPanel == null || rootContainer == null
-                || rootContainer.getWidth() <= 0 || rootContainer.getHeight() <= 0) {
-            return;
-        }
-        if (!clockGroupPivotValid) {
-            computeClockGroupPivot();
-        }
-        clockPanel.setPivotX(clockGroupPivotX);
-        clockPanel.setPivotY(clockGroupPivotY);
-        clockPanel.setScaleX(clockScaleFactor);
-        clockPanel.setScaleY(clockScaleFactor);
-    }
-
-    private void computeClockGroupPivot() {
-        float minX = Float.MAX_VALUE;
-        float minY = Float.MAX_VALUE;
-        float maxX = -Float.MAX_VALUE;
-        float maxY = -Float.MAX_VALUE;
-        boolean hasVisibleBlock = false;
-        for (int target = SCALE_TARGET_TIME; target <= SCALE_TARGET_WEATHER; target++) {
-            AccessibleFrameLayout block = blockForTarget(target);
-            if (block == null || block.getVisibility() != View.VISIBLE
-                    || block.getWidth() <= 0 || block.getHeight() <= 0) {
-                continue;
-            }
-            float left = getBlockBaseX(target);
-            float top = getBlockBaseY(target);
-            minX = Math.min(minX, left);
-            minY = Math.min(minY, top);
-            maxX = Math.max(maxX, left + block.getWidth());
-            maxY = Math.max(maxY, top + block.getHeight());
-            hasVisibleBlock = true;
-        }
-
-        if (!hasVisibleBlock) {
-            clockGroupPivotX = rootContainer.getWidth() / 2.0f;
-            clockGroupPivotY = rootContainer.getHeight() / 2.0f;
-        } else {
-            clockGroupPivotX = (minX + maxX) / 2.0f;
-            clockGroupPivotY = (minY + maxY) / 2.0f;
-        }
-        clockGroupPivotValid = true;
     }
 
     private void scheduleAvoidingClockLayout() {
@@ -2256,9 +2357,6 @@ public final class PhotoClockActivity extends Activity {
                     .putFloat(orientationKey(CLOCK_TIME_SCALE_FACTOR), timeScaleFactor)
                     .putFloat(orientationKey(CLOCK_DATE_SCALE_FACTOR), dateScaleFactor)
                     .putFloat(orientationKey(CLOCK_WEATHER_SCALE_FACTOR), weatherScaleFactor);
-            if (clockSizeMode != CLOCK_SIZE_MODE_GROUP) {
-                clearClockGroupPivot(editor);
-            }
             editor.apply();
         }
     }
@@ -2341,7 +2439,7 @@ public final class PhotoClockActivity extends Activity {
                     isDraggingClock = true;
                     activeClockBlock = view;
                     if (clockSizeMode == CLOCK_SIZE_MODE_GROUP) {
-                        setClockBlocksAlpha(0.75f);
+                        startLegacyClockDrag();
                     } else {
                         clockStartBlockX = getBlockBaseX(target);
                         clockStartBlockY = getBlockBaseY(target);
@@ -2382,7 +2480,8 @@ public final class PhotoClockActivity extends Activity {
                         touchDownRawY = event.getRawY();
                         activeClockBlock = view;
                         if (clockSizeMode == CLOCK_SIZE_MODE_GROUP) {
-                            captureClockGroupDragStart();
+                            legacyClockStartTranslationX = legacyClockTranslationX;
+                            legacyClockStartTranslationY = legacyClockTranslationY;
                         } else {
                             clockStartBlockX = getBlockBaseX(target);
                             clockStartBlockY = getBlockBaseY(target);
@@ -2394,7 +2493,9 @@ public final class PhotoClockActivity extends Activity {
                             float deltaX = event.getRawX() - touchDownRawX;
                             float deltaY = event.getRawY() - touchDownRawY;
                             if (clockSizeMode == CLOCK_SIZE_MODE_GROUP) {
-                                clampAndApplyClockGroupTranslation(deltaX, deltaY);
+                                clampAndApplyLegacyTranslation(
+                                        legacyClockStartTranslationX + deltaX,
+                                        legacyClockStartTranslationY + deltaY);
                             } else {
                                 float interactionScale = getClockInteractionScale();
                                 clampAndApplyBlockTranslation(target,
@@ -2427,7 +2528,7 @@ public final class PhotoClockActivity extends Activity {
 
     private void finishClockDrag(View view, int target, boolean save) {
         if (clockSizeMode == CLOCK_SIZE_MODE_GROUP) {
-            setClockBlocksAlpha(1.0f);
+            if (legacyClockPanel != null) legacyClockPanel.setAlpha(1.0f);
         } else if (view != null) {
             view.setAlpha(1.0f);
         }
@@ -2436,7 +2537,7 @@ public final class PhotoClockActivity extends Activity {
                 avoidLayoutAnchorTarget = target;
                 scheduleAvoidingClockLayout();
             } else if (clockSizeMode == CLOCK_SIZE_MODE_GROUP) {
-                saveAllClockPositions();
+                saveLegacyClockPosition();
             } else {
                 saveClockPosition(target);
             }
@@ -2446,96 +2547,20 @@ public final class PhotoClockActivity extends Activity {
         lastClockDragEndTime = SystemClock.elapsedRealtime();
     }
 
-    private void setClockBlocksAlpha(float alpha) {
-        if (timeBlock != null) timeBlock.setAlpha(alpha);
-        if (dateBlock != null) dateBlock.setAlpha(alpha);
-        if (weatherBlock != null) weatherBlock.setAlpha(alpha);
+    private void startLegacyClockDrag() {
+        legacyClockStartTranslationX = legacyClockTranslationX;
+        legacyClockStartTranslationY = legacyClockTranslationY;
+        if (legacyClockPanel != null) legacyClockPanel.setAlpha(0.75f);
     }
 
-    private void captureClockGroupDragStart() {
-        if (!clockGroupPivotValid) {
-            computeClockGroupPivot();
-        }
-        clockStartTimeBlockX = timeBlockBaseX;
-        clockStartTimeBlockY = timeBlockBaseY;
-        clockStartDateBlockX = dateBlockBaseX;
-        clockStartDateBlockY = dateBlockBaseY;
-        clockStartWeatherBlockX = weatherBlockBaseX;
-        clockStartWeatherBlockY = weatherBlockBaseY;
-        clockStartGroupPivotX = clockGroupPivotX;
-        clockStartGroupPivotY = clockGroupPivotY;
-    }
-
-    private void clampAndApplyClockGroupTranslation(float deltaX, float deltaY) {
-        if (rootContainer == null || clockPanel == null) return;
-        if (rootContainer.getWidth() <= 0 || rootContainer.getHeight() <= 0) return;
-
-        fillClockGroupBounds(
-                clockStartTimeBlockX, clockStartTimeBlockY,
-                clockStartDateBlockX, clockStartDateBlockY,
-                clockStartWeatherBlockX, clockStartWeatherBlockY,
-                clockStartGroupPivotX, clockStartGroupPivotY,
-                clockPanel.getScaleX());
-        float margin = dp(12);
-        deltaX = clampGroupDelta(deltaX, clockGroupDragBounds.left,
-                clockGroupDragBounds.right,
-                rootContainer.getWidth(), margin);
-        deltaY = clampGroupDelta(deltaY, clockGroupDragBounds.top,
-                clockGroupDragBounds.bottom,
-                rootContainer.getHeight(), margin);
-
-        setBlockBasePosition(SCALE_TARGET_TIME,
-                clockStartTimeBlockX + deltaX, clockStartTimeBlockY + deltaY);
-        setBlockBasePosition(SCALE_TARGET_DATE,
-                clockStartDateBlockX + deltaX, clockStartDateBlockY + deltaY);
-        setBlockBasePosition(SCALE_TARGET_WEATHER,
-                clockStartWeatherBlockX + deltaX, clockStartWeatherBlockY + deltaY);
-        clockGroupPivotX = clockStartGroupPivotX + deltaX;
-        clockGroupPivotY = clockStartGroupPivotY + deltaY;
-        clockGroupPivotValid = true;
-        applyClockTranslation();
-        applyClockGroupTransform();
-    }
-
-    private float clampGroupDelta(float delta, float minBound, float maxBound,
-                                  float containerSize, float margin) {
-        float minDelta = margin - minBound;
-        float maxDelta = containerSize - margin - maxBound;
-        if (minDelta > maxDelta) {
-            return (containerSize / 2.0f) - ((minBound + maxBound) / 2.0f);
-        }
-        return Math.max(minDelta, Math.min(maxDelta, delta));
-    }
-
-    /** Fills the initial transformed group bounds without allocating during a drag. */
-    private void fillClockGroupBounds(float timeX, float timeY,
-                                      float dateX, float dateY,
-                                      float weatherX, float weatherY,
-                                      float pivotX, float pivotY, float scale) {
-        clockGroupDragBounds.setEmpty();
-        for (int target = SCALE_TARGET_TIME; target <= SCALE_TARGET_WEATHER; target++) {
-            AccessibleFrameLayout block = blockForTarget(target);
-            if (block == null || block.getVisibility() != View.VISIBLE
-                    || block.getWidth() <= 0 || block.getHeight() <= 0) {
-                continue;
-            }
-            float baseX = getClockGroupStartX(target, timeX, dateX, weatherX);
-            float baseY = getClockGroupStartY(target, timeY, dateY, weatherY);
-            float left = pivotX + scale * (baseX - pivotX);
-            float top = pivotY + scale * (baseY - pivotY);
-            float right = pivotX + scale * (baseX + block.getWidth() - pivotX);
-            float bottom = pivotY + scale * (baseY + block.getHeight() - pivotY);
-            if (clockGroupDragBounds.isEmpty()) {
-                clockGroupDragBounds.set(left, top, right, bottom);
-            } else {
-                clockGroupDragBounds.union(left, top, right, bottom);
-            }
-        }
-        if (clockGroupDragBounds.isEmpty()) {
-            float centerX = rootContainer.getWidth() / 2.0f;
-            float centerY = rootContainer.getHeight() / 2.0f;
-            clockGroupDragBounds.set(centerX, centerY, centerX, centerY);
-        }
+    private void applyLegacyClockScale() {
+        if (legacyClockPanel == null) return;
+        legacyClockPanel.setPivotX(legacyClockPanel.getWidth() / 2.0f);
+        legacyClockPanel.setPivotY(legacyClockPanel.getHeight() / 2.0f);
+        legacyClockPanel.setScaleX(clockScaleFactor);
+        legacyClockPanel.setScaleY(clockScaleFactor);
+        legacyClockPanel.setTranslationX(legacyClockTranslationX + burnInOffsetX);
+        legacyClockPanel.setTranslationY(legacyClockTranslationY + burnInOffsetY);
     }
 
     private float getClockGroupStartX(int target, float timeX, float dateX,
@@ -2553,11 +2578,7 @@ public final class PhotoClockActivity extends Activity {
     }
 
     private float getClockInteractionScale() {
-        if (clockSizeMode != CLOCK_SIZE_MODE_GROUP || clockPanel == null) {
-            return 1.0f;
-        }
-        float scale = clockPanel.getScaleX();
-        return scale > 0.01f ? scale : 1.0f;
+        return 1.0f;
     }
 
     private FrameLayout.LayoutParams clockBlockLayoutParams() {
@@ -2639,11 +2660,6 @@ public final class PhotoClockActivity extends Activity {
 
         SharedPreferences.Editor editor = prefs.edit();
         writeClockPosition(editor, target, rootW, rootH);
-        if (clockSizeMode == CLOCK_SIZE_MODE_GROUP) {
-            writeClockGroupPivot(editor, rootW, rootH);
-        } else {
-            clearClockGroupPivot(editor);
-        }
         editor.apply();
     }
 
@@ -2656,11 +2672,6 @@ public final class PhotoClockActivity extends Activity {
         SharedPreferences.Editor editor = prefs.edit();
         for (int target = SCALE_TARGET_TIME; target <= SCALE_TARGET_WEATHER; target++) {
             writeClockPosition(editor, target, rootW, rootH);
-        }
-        if (clockSizeMode == CLOCK_SIZE_MODE_GROUP) {
-            writeClockGroupPivot(editor, rootW, rootH);
-        } else {
-            clearClockGroupPivot(editor);
         }
         editor.apply();
     }
@@ -2678,26 +2689,12 @@ public final class PhotoClockActivity extends Activity {
                 .putInt(CLOCK_LAYOUT_VERSION_KEY, CLOCK_LAYOUT_VERSION);
     }
 
-    private void writeClockGroupPivot(SharedPreferences.Editor editor, int rootW, int rootH) {
-        if (editor == null || clockSizeMode != CLOCK_SIZE_MODE_GROUP
-                || rootW <= 0 || rootH <= 0) return;
-        if (!clockGroupPivotValid) {
-            computeClockGroupPivot();
-        }
-        editor.putFloat(orientationKey(CLOCK_GROUP_PIVOT_X_RATIO),
-                        ClockPositionPolicy.ratioFromCenter(clockGroupPivotX, rootW))
-                .putFloat(orientationKey(CLOCK_GROUP_PIVOT_Y_RATIO),
-                        ClockPositionPolicy.ratioFromCenter(clockGroupPivotY, rootH));
-    }
-
-    private void clearClockGroupPivot(SharedPreferences.Editor editor) {
-        if (editor == null) return;
-        editor.remove(orientationKey(CLOCK_GROUP_PIVOT_X_RATIO))
-                .remove(orientationKey(CLOCK_GROUP_PIVOT_Y_RATIO));
-    }
-
     private void restoreClockPosition() {
         if (rootContainer == null || clockPanel == null || prefs == null) {
+            return;
+        }
+        if (legacyClockPanelActive) {
+            restoreLegacyClockPosition();
             return;
         }
         int rootW = rootContainer.getWidth();
@@ -2712,28 +2709,95 @@ public final class PhotoClockActivity extends Activity {
         restoreBlockPosition(SCALE_TARGET_TIME, rootW, rootH);
         restoreBlockPosition(SCALE_TARGET_DATE, rootW, rootH);
         restoreBlockPosition(SCALE_TARGET_WEATHER, rootW, rootH);
-        clockGroupPivotValid = false;
-        if (clockSizeMode == CLOCK_SIZE_MODE_GROUP
-                && prefs.contains(orientationKey(CLOCK_GROUP_PIVOT_X_RATIO))
-                && prefs.contains(orientationKey(CLOCK_GROUP_PIVOT_Y_RATIO))) {
-            clockGroupPivotX = ClockPositionPolicy.centerFromRatio(
-                    prefs.getFloat(orientationKey(CLOCK_GROUP_PIVOT_X_RATIO), 0.5f), rootW);
-            clockGroupPivotY = ClockPositionPolicy.centerFromRatio(
-                    prefs.getFloat(orientationKey(CLOCK_GROUP_PIVOT_Y_RATIO), 0.5f), rootH);
-            clockGroupPivotValid = true;
-        }
         applyClockScale();
-        if (clockSizeMode == CLOCK_SIZE_MODE_GROUP) {
-            SharedPreferences.Editor editor = prefs.edit();
-            writeClockGroupPivot(editor, rootW, rootH);
-            editor.apply();
+    }
+
+    private float getLegacyClockDefaultLeft() {
+        return rootContainer.getWidth() - legacyClockPanel.getWidth() - dp(16);
+    }
+
+    private float getLegacyClockDefaultTop() {
+        return rootContainer.getHeight() - legacyClockPanel.getHeight() - dp(16);
+    }
+
+    private void clampAndApplyLegacyTranslation(float targetTransX, float targetTransY) {
+        if (rootContainer == null || legacyClockPanel == null) return;
+        int rootW = rootContainer.getWidth();
+        int rootH = rootContainer.getHeight();
+        int panelW = legacyClockPanel.getWidth();
+        int panelH = legacyClockPanel.getHeight();
+        if (rootW <= 0 || rootH <= 0 || panelW <= 0 || panelH <= 0) {
+            legacyClockTranslationX = targetTransX;
+            legacyClockTranslationY = targetTransY;
+            applyLegacyClockTranslation();
+            return;
         }
+
+        float defaultLeft = getLegacyClockDefaultLeft();
+        float defaultTop = getLegacyClockDefaultTop();
+        float minTransX = -defaultLeft + dp(12);
+        float maxTransX = dp(16);
+        float minTransY = -defaultTop + dp(12);
+        float maxTransY = dp(16);
+        legacyClockTranslationX = Math.max(minTransX, Math.min(maxTransX, targetTransX));
+        legacyClockTranslationY = Math.max(minTransY, Math.min(maxTransY, targetTransY));
+        applyLegacyClockTranslation();
+    }
+
+    private void saveLegacyClockPosition() {
+        if (rootContainer == null || legacyClockPanel == null || prefs == null) return;
+        int rootW = rootContainer.getWidth();
+        int rootH = rootContainer.getHeight();
+        int panelW = legacyClockPanel.getWidth();
+        int panelH = legacyClockPanel.getHeight();
+        if (rootW <= panelW || rootH <= panelH) return;
+
+        float currentLeft = getLegacyClockDefaultLeft() + legacyClockTranslationX;
+        float currentTop = getLegacyClockDefaultTop() + legacyClockTranslationY;
+        prefs.edit()
+                .putFloat(orientationKey(CLOCK_POS_X_RATIO),
+                        currentLeft / (float) (rootW - panelW))
+                .putFloat(orientationKey(CLOCK_POS_Y_RATIO),
+                        currentTop / (float) (rootH - panelH))
+                .apply();
+    }
+
+    private void restoreLegacyClockPosition() {
+        if (rootContainer == null || legacyClockPanel == null || prefs == null) return;
+        int rootW = rootContainer.getWidth();
+        int rootH = rootContainer.getHeight();
+        int panelW = legacyClockPanel.getWidth();
+        int panelH = legacyClockPanel.getHeight();
+        if (rootW <= panelW || rootH <= panelH) return;
+
+        float ratioX = prefs.getFloat(orientationKey(CLOCK_POS_X_RATIO),
+                DEFAULT_GROUP_PANEL_X_RATIO);
+        float ratioY = prefs.getFloat(orientationKey(CLOCK_POS_Y_RATIO),
+                DEFAULT_GROUP_PANEL_Y_RATIO);
+        float defaultLeft = getLegacyClockDefaultLeft();
+        float defaultTop = getLegacyClockDefaultTop();
+        clampAndApplyLegacyTranslation(
+                ratioX * (rootW - panelW) - defaultLeft,
+                ratioY * (rootH - panelH) - defaultTop);
+        applyLegacyClockScale();
     }
 
     private void applyClockTranslation() {
+        if (legacyClockPanelActive) {
+            applyLegacyClockTranslation();
+            return;
+        }
         applyBlockTranslation(SCALE_TARGET_TIME);
         applyBlockTranslation(SCALE_TARGET_DATE);
         applyBlockTranslation(SCALE_TARGET_WEATHER);
+    }
+
+    private void applyLegacyClockTranslation() {
+        if (legacyClockPanel == null) return;
+        float offsetX = pomodoroModeLayoutActive ? 0.0f : burnInOffsetX;
+        float offsetY = pomodoroModeLayoutActive ? 0.0f : burnInOffsetY;
+        legacyClockPanel.setTranslationX(legacyClockTranslationX + offsetX);
+        legacyClockPanel.setTranslationY(legacyClockTranslationY + offsetY);
     }
 
     private void applyBlockTranslation(int target) {
@@ -2822,6 +2886,8 @@ public final class PhotoClockActivity extends Activity {
     private static void putDefaultClockOrientation(SharedPreferences.Editor editor,
                                                     String suffix) {
         editor.putFloat(CLOCK_SCALE_FACTOR + suffix, DEFAULT_CLOCK_SCALE)
+                .putFloat(CLOCK_POS_X_RATIO + suffix, DEFAULT_GROUP_PANEL_X_RATIO)
+                .putFloat(CLOCK_POS_Y_RATIO + suffix, DEFAULT_GROUP_PANEL_Y_RATIO)
                 .putFloat(CLOCK_TIME_SCALE_FACTOR + suffix, DEFAULT_CLOCK_SCALE)
                 .putFloat(CLOCK_DATE_SCALE_FACTOR + suffix, DEFAULT_CLOCK_SCALE)
                 .putFloat(CLOCK_WEATHER_SCALE_FACTOR + suffix, DEFAULT_CLOCK_SCALE)
@@ -3606,6 +3672,7 @@ public final class PhotoClockActivity extends Activity {
         updateWeatherBlockVisibility();
         if (clockPanel != null) {
             clockPanel.requestLayout();
+            if (legacyClockPanel != null) legacyClockPanel.requestLayout();
             clockPanel.post(new Runnable() {
                 @Override
                 public void run() {

@@ -750,7 +750,7 @@ public final class SettingsActivity extends Activity {
                 new String[] {
                         "固定位置（可重疊）",
                         "自動避讓（原始效果）",
-                        "群組放大（保持間隔、一起移動）"
+                        "整體放大（單一面板、一起移動）"
                 },
                 clockSizeMode);
 
