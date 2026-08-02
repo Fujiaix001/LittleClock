@@ -13,9 +13,13 @@ import org.json.JSONObject;
 import java.io.BufferedInputStream;
 import java.io.ByteArrayOutputStream;
 import java.net.URLEncoder;
+import java.text.SimpleDateFormat;
 import java.text.Normalizer;
+import java.util.Date;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
+import java.util.TimeZone;
 
 import javax.net.ssl.HttpsURLConnection;
 import javax.net.ssl.SSLContext;
@@ -62,6 +66,36 @@ public final class WeatherClient {
             this.temperatureCelsius = temperatureCelsius;
             this.weatherCode = weatherCode;
             this.daytime = daytime;
+        }
+    }
+
+    public static final class HourlyWeather {
+        public final String localTime;
+        public final int temperatureCelsius;
+        public final int precipitationProbability;
+        public final int weatherCode;
+
+        HourlyWeather(String localTime, int temperatureCelsius,
+                int precipitationProbability, int weatherCode) {
+            this.localTime = localTime;
+            this.temperatureCelsius = temperatureCelsius;
+            this.precipitationProbability = precipitationProbability;
+            this.weatherCode = weatherCode;
+        }
+    }
+
+    public static final class ExtendedWeather {
+        public final CurrentWeather current;
+        public final List<HourlyWeather> nextHours;
+        public final long sunriseAtMs;
+        public final long sunsetAtMs;
+
+        ExtendedWeather(CurrentWeather current, List<HourlyWeather> nextHours,
+                long sunriseAtMs, long sunsetAtMs) {
+            this.current = current;
+            this.nextHours = nextHours;
+            this.sunriseAtMs = sunriseAtMs;
+            this.sunsetAtMs = sunsetAtMs;
         }
     }
 
@@ -139,6 +173,80 @@ public final class WeatherClient {
                 (int) Math.round(current.getDouble("temperature_2m")),
                 current.getInt("weather_code"),
                 current.optInt("is_day", 1) == 1);
+    }
+
+    /**
+     * Fetches the optional display data in one request. The normal current-weather request is
+     * intentionally kept separate so the feature can remain completely dormant when disabled.
+     */
+    public static ExtendedWeather fetchExtended(double latitude, double longitude) throws Exception {
+        String url = "https://api.open-meteo.com/v1/forecast?latitude=" + latitude
+                + "&longitude=" + longitude
+                + "&current=temperature_2m,weather_code,is_day"
+                + "&hourly=temperature_2m,precipitation_probability,weather_code"
+                + "&daily=sunrise,sunset&forecast_days=2"
+                + "&temperature_unit=celsius&timezone=auto";
+        JSONObject root = new JSONObject(request(url));
+        JSONObject currentJson = root.getJSONObject("current");
+        CurrentWeather current = new CurrentWeather(
+                (int) Math.round(currentJson.getDouble("temperature_2m")),
+                currentJson.getInt("weather_code"),
+                currentJson.optInt("is_day", 1) == 1);
+
+        JSONObject hourly = root.optJSONObject("hourly");
+        JSONArray times = hourly == null ? null : hourly.optJSONArray("time");
+        JSONArray temperatures = hourly == null ? null : hourly.optJSONArray("temperature_2m");
+        JSONArray precipitation = hourly == null
+                ? null : hourly.optJSONArray("precipitation_probability");
+        JSONArray codes = hourly == null ? null : hourly.optJSONArray("weather_code");
+        List<HourlyWeather> nextHours = new ArrayList<HourlyWeather>();
+        String currentTime = currentJson.optString("time", "");
+        int firstFuture = 0;
+        if (times != null && currentTime.length() > 0) {
+            firstFuture = -1;
+            for (int i = 0; i < times.length(); i++) {
+                String candidate = times.optString(i, "");
+                if (candidate.compareTo(currentTime) > 0) {
+                    firstFuture = i;
+                    break;
+                }
+            }
+            if (firstFuture < 0) firstFuture = 0;
+        }
+        if (times != null && temperatures != null && codes != null) {
+            int end = Math.min(times.length(), Math.min(temperatures.length(), codes.length()));
+            for (int i = firstFuture; i < end && nextHours.size() < 3; i++) {
+                String time = times.optString(i, "");
+                if (time.length() == 0) continue;
+                int probability = precipitation == null || i >= precipitation.length()
+                        ? 0 : precipitation.optInt(i, 0);
+                nextHours.add(new HourlyWeather(
+                        time.length() >= 16 ? time.substring(11, 16) : time,
+                        (int) Math.round(temperatures.optDouble(i, 0.0)),
+                        Math.max(0, Math.min(100, probability)),
+                        codes.optInt(i, 0)));
+            }
+        }
+
+        String timezone = root.optString("timezone", "UTC");
+        JSONObject daily = root.optJSONObject("daily");
+        JSONArray sunrise = daily == null ? null : daily.optJSONArray("sunrise");
+        JSONArray sunset = daily == null ? null : daily.optJSONArray("sunset");
+        long sunriseAtMs = sunrise == null || sunrise.length() == 0
+                ? -1L : parseLocalDateTime(sunrise.optString(0, ""), timezone);
+        long sunsetAtMs = sunset == null || sunset.length() == 0
+                ? -1L : parseLocalDateTime(sunset.optString(0, ""), timezone);
+        return new ExtendedWeather(current, nextHours, sunriseAtMs, sunsetAtMs);
+    }
+
+    private static long parseLocalDateTime(String value, String timezone) throws Exception {
+        if (value == null || value.length() == 0) return -1L;
+        String normalized = value.length() > 16 ? value.substring(0, 16) : value;
+        SimpleDateFormat format = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm", Locale.US);
+        format.setLenient(false);
+        format.setTimeZone(TimeZone.getTimeZone(timezone));
+        Date parsed = format.parse(normalized);
+        return parsed == null ? -1L : parsed.getTime();
     }
 
     private static String request(String url) throws Exception {

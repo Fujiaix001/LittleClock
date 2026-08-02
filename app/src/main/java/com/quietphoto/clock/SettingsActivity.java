@@ -84,6 +84,7 @@ public final class SettingsActivity extends Activity {
     public static final String WEATHER_SHOW_LOCATION = "weather_show_location";
     public static final String WEATHER_MINIMAL_LOCATION = "weather_minimal_location";
     public static final String WEATHER_COMPACT_MODE = "weather_compact_mode";
+    public static final String WEATHER_EXTENDED_ENABLED = "weather_extended_enabled";
     public static final String WEATHER_LOCATION_NAME = "weather_location_name";
     public static final String WEATHER_LATITUDE = "weather_latitude";
     public static final String WEATHER_LONGITUDE = "weather_longitude";
@@ -92,6 +93,10 @@ public final class SettingsActivity extends Activity {
     public static final String WEATHER_CODE = "weather_code";
     public static final String WEATHER_IS_DAY = "weather_is_day";
     public static final String WEATHER_UPDATED_AT = "weather_updated_at";
+    public static final String WEATHER_EXTENDED_UPDATED_AT = "weather_extended_updated_at";
+    public static final String WEATHER_EXTENDED_FORECAST = "weather_extended_forecast";
+    public static final String WEATHER_EXTENDED_SUNRISE_AT = "weather_extended_sunrise_at";
+    public static final String WEATHER_EXTENDED_SUNSET_AT = "weather_extended_sunset_at";
     public static final String FILE_SOURCE_PREFIX = "file:";
     public static final String TREE_SOURCE_PREFIX = "tree:";
 
@@ -144,6 +149,7 @@ public final class SettingsActivity extends Activity {
     private boolean weatherShowLocation;
     private boolean weatherMinimalLocation;
     private boolean weatherCompactMode = true;
+    private boolean weatherExtendedEnabled;
     private String weatherLocationName = "";
     private String weatherTimezone = "auto";
     private double weatherLatitude = Double.NaN;
@@ -184,6 +190,7 @@ public final class SettingsActivity extends Activity {
     private CheckBox weatherLocationCheck;
     private CheckBox weatherMinimalLocationCheck;
     private CheckBox weatherCompactCheck;
+    private CheckBox weatherExtendedCheck;
     private CheckBox alarmEnabledCheck;
     private CheckBox alarmRepeatCheck;
     private TextView nightScheduleText;
@@ -281,6 +288,7 @@ public final class SettingsActivity extends Activity {
         weatherShowLocation = prefs.getBoolean(WEATHER_SHOW_LOCATION, false);
         weatherMinimalLocation = prefs.getBoolean(WEATHER_MINIMAL_LOCATION, false);
         weatherCompactMode = prefs.getBoolean(WEATHER_COMPACT_MODE, true);
+        weatherExtendedEnabled = prefs.getBoolean(WEATHER_EXTENDED_ENABLED, false);
         weatherLocationName = prefs.getString(WEATHER_LOCATION_NAME, "");
         weatherTimezone = prefs.getString(WEATHER_TIMEZONE, "auto");
         weatherLatitude = parseDouble(prefs.getString(WEATHER_LATITUDE, null));
@@ -636,6 +644,12 @@ public final class SettingsActivity extends Activity {
                 weatherMinimalLocationCheck.setAlpha(minimalAvailable ? 1.0f : 0.45f);
             }
         });
+        weatherExtendedCheck = checkBox("顯示延伸天氣資訊", weatherExtendedEnabled);
+        weatherOptions.addView(weatherExtendedCheck);
+        TextView weatherExtendedHint = text(
+                "未來三小時天氣與日照進度（額外資料）", 12, SECONDARY);
+        weatherExtendedHint.setPadding(dp(4), 0, dp(4), dp(4));
+        weatherOptions.addView(weatherExtendedHint);
         TextView weatherCredit = text("天氣資料：Open-Meteo", 12, SECONDARY);
         weatherCredit.setPadding(dp(4), 0, dp(4), dp(4));
         weatherOptions.addView(weatherCredit);
@@ -1749,6 +1763,7 @@ public final class SettingsActivity extends Activity {
                 .putBoolean(WEATHER_MINIMAL_LOCATION,
                         weatherMinimalLocationCheck.isChecked())
                 .putBoolean(WEATHER_COMPACT_MODE, weatherCompactCheck.isChecked())
+                .putBoolean(WEATHER_EXTENDED_ENABLED, weatherExtendedCheck.isChecked())
                 .putString(WEATHER_LOCATION_NAME, weatherLocationName)
                 .putString(WEATHER_LATITUDE, Double.toString(weatherLatitude))
                 .putString(WEATHER_LONGITUDE, Double.toString(weatherLongitude))
@@ -1771,7 +1786,11 @@ public final class SettingsActivity extends Activity {
             editor.remove(WEATHER_TEMPERATURE)
                     .remove(WEATHER_CODE)
                     .remove(WEATHER_IS_DAY)
-                    .remove(WEATHER_UPDATED_AT);
+                    .remove(WEATHER_UPDATED_AT)
+                    .remove(WEATHER_EXTENDED_UPDATED_AT)
+                    .remove(WEATHER_EXTENDED_FORECAST)
+                    .remove(WEATHER_EXTENDED_SUNRISE_AT)
+                    .remove(WEATHER_EXTENDED_SUNSET_AT);
         }
         editor.apply();
         if (Build.VERSION.SDK_INT >= 21) {

@@ -67,6 +67,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 import java.util.Random;
+import java.util.TimeZone;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -172,6 +173,10 @@ public final class PhotoClockActivity extends Activity {
     private WeatherIconView weatherIcon;
     private TextView weatherTemperature;
     private TextView weatherLocation;
+    private LinearLayout weatherExtendedPanel;
+    private TextView weatherForecastText;
+    private TextView daylightLabel;
+    private DaylightProgressView daylightProgressView;
     private LinearLayout alarmRow;
     private AlarmIconView alarmIcon;
     private TextView alarmTimeText;
@@ -215,6 +220,8 @@ public final class PhotoClockActivity extends Activity {
             new SimpleDateFormat("M月d日 EEEE", Locale.TAIWAN);
     private final SimpleDateFormat photoDateFormatEn =
             new SimpleDateFormat("EEE, MMM d", Locale.US);
+    private final SimpleDateFormat weatherSunTimeFormat =
+            new SimpleDateFormat("HH:mm", Locale.US);
 
     private int photoFailures;
     private volatile int photoGeneration;
@@ -268,7 +275,9 @@ public final class PhotoClockActivity extends Activity {
     private boolean weatherShowLocation;
     private boolean weatherMinimalLocation;
     private boolean weatherCompactMode = true;
+    private boolean weatherExtendedEnabled;
     private String weatherLocationName = "";
+    private String weatherTimezone = "auto";
     private double weatherLatitude = Double.NaN;
     private double weatherLongitude = Double.NaN;
     private boolean weatherFetchInFlight;
@@ -1336,7 +1345,10 @@ public final class PhotoClockActivity extends Activity {
         weatherMinimalLocation = prefs.getBoolean(
                 SettingsActivity.WEATHER_MINIMAL_LOCATION, false);
         weatherCompactMode = prefs.getBoolean(SettingsActivity.WEATHER_COMPACT_MODE, true);
+        weatherExtendedEnabled = prefs.getBoolean(
+                SettingsActivity.WEATHER_EXTENDED_ENABLED, false);
         weatherLocationName = prefs.getString(SettingsActivity.WEATHER_LOCATION_NAME, "");
+        weatherTimezone = prefs.getString(SettingsActivity.WEATHER_TIMEZONE, "auto");
         weatherLatitude = parseDouble(prefs.getString(SettingsActivity.WEATHER_LATITUDE, null));
         weatherLongitude = parseDouble(prefs.getString(SettingsActivity.WEATHER_LONGITUDE, null));
         loadClockScalePreferences(0.75f);
@@ -1572,6 +1584,8 @@ public final class PhotoClockActivity extends Activity {
         if (weatherTemperature != null) weatherTemperature.setTypeface(weatherTypeface);
         if (compactWeatherTemperature != null) compactWeatherTemperature.setTypeface(weatherTypeface);
         if (weatherLocation != null) weatherLocation.setTypeface(weatherTypeface);
+        if (weatherForecastText != null) weatherForecastText.setTypeface(weatherTypeface);
+        if (daylightLabel != null) daylightLabel.setTypeface(weatherTypeface);
         if (alarmTimeText != null) alarmTimeText.setTypeface(clockTypeface);
         if (pomodoroLabel != null) pomodoroLabel.setTypeface(clockTypeface);
         if (pomodoroText != null) pomodoroText.setTypeface(clockTypeface);
@@ -1594,12 +1608,16 @@ public final class PhotoClockActivity extends Activity {
 
     private void updateWeatherBlockVisibility() {
         if (weatherBlock == null) return;
+        boolean extendedVisible = weatherExtendedPanel != null
+                && weatherExtendedPanel.getVisibility() == View.VISIBLE;
         boolean visible = (compactWeatherRow != null
                 && compactWeatherRow.getVisibility() == View.VISIBLE)
-                || (weatherRow != null && weatherRow.getVisibility() == View.VISIBLE);
+                || (weatherRow != null && weatherRow.getVisibility() == View.VISIBLE)
+                || extendedVisible;
         if (legacyClockPanelActive) {
             // In the .13-style surface, compact weather lives beside the date.
-            visible = weatherRow != null && weatherRow.getVisibility() == View.VISIBLE;
+            visible = (weatherRow != null && weatherRow.getVisibility() == View.VISIBLE)
+                    || extendedVisible;
         }
         weatherBlock.setVisibility(visible ? View.VISIBLE : View.GONE);
     }
@@ -1965,6 +1983,42 @@ public final class PhotoClockActivity extends Activity {
                 Gravity.CENTER);
         weatherRowParams.topMargin = dp(3);
         weatherBlock.addView(weatherRow, weatherRowParams);
+
+        weatherExtendedPanel = new LinearLayout(this);
+        weatherExtendedPanel.setOrientation(LinearLayout.VERTICAL);
+        weatherExtendedPanel.setGravity(Gravity.CENTER_HORIZONTAL);
+        weatherExtendedPanel.setPadding(dp(4), 0, dp(4), 0);
+        weatherExtendedPanel.setVisibility(View.GONE);
+
+        weatherForecastText = new TextView(this);
+        weatherForecastText.setTextSize(12);
+        weatherForecastText.setTextColor(Color.WHITE);
+        weatherForecastText.setGravity(Gravity.CENTER);
+        weatherForecastText.setIncludeFontPadding(false);
+        weatherForecastText.setShadowLayer(dp(2), dp(1), dp(1), Color.BLACK);
+        weatherForecastText.setMaxLines(2);
+        weatherExtendedPanel.addView(weatherForecastText, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+
+        daylightProgressView = new DaylightProgressView(this);
+        LinearLayout.LayoutParams daylightProgressParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(16));
+        daylightProgressParams.topMargin = dp(2);
+        weatherExtendedPanel.addView(daylightProgressView, daylightProgressParams);
+
+        daylightLabel = new TextView(this);
+        daylightLabel.setTextSize(10);
+        daylightLabel.setTextColor(SECONDARY);
+        daylightLabel.setGravity(Gravity.CENTER);
+        daylightLabel.setIncludeFontPadding(false);
+        weatherExtendedPanel.addView(daylightLabel, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+
+        FrameLayout.LayoutParams extendedWeatherParams = new FrameLayout.LayoutParams(
+                dp(220), FrameLayout.LayoutParams.WRAP_CONTENT,
+                Gravity.TOP | Gravity.CENTER_HORIZONTAL);
+        extendedWeatherParams.topMargin = dp(38);
+        weatherBlock.addView(weatherExtendedPanel, extendedWeatherParams);
         clockPanel.addView(weatherBlock, clockBlockLayoutParams());
 
         pomodoroRow = new LinearLayout(this);
@@ -2429,6 +2483,12 @@ public final class PhotoClockActivity extends Activity {
         }
         if (weatherLocation != null) {
             setClockTextSize(weatherLocation, 14.0f * weatherScale);
+        }
+        if (weatherForecastText != null) {
+            setClockTextSize(weatherForecastText, 12.0f * weatherScale);
+        }
+        if (daylightLabel != null) {
+            setClockTextSize(daylightLabel, 10.0f * weatherScale);
         }
         if (compactWeatherIcon != null) {
             int size = Math.max(1, Math.round(22.0f * weatherScale));
@@ -3467,6 +3527,9 @@ public final class PhotoClockActivity extends Activity {
                 photoDate.setText(photoDateFormat.format(nowDate));
             }
         }
+        if (daylightProgressView != null) {
+            daylightProgressView.setNow(nowDate.getTime());
+        }
         updateAlarmIndicator();
         updatePomodoroDisplay();
     }
@@ -3743,22 +3806,58 @@ public final class PhotoClockActivity extends Activity {
         pendingWeatherRefreshCallback = callback;
         final double latitude = weatherLatitude;
         final double longitude = weatherLongitude;
+        final boolean extendedEnabled = weatherExtendedEnabled;
         weatherExecutor.execute(new Runnable() {
             @Override
             public void run() {
                 boolean success = false;
                 try {
-                    final WeatherClient.CurrentWeather weather =
-                            WeatherClient.fetchCurrent(latitude, longitude);
-                    prefs.edit()
+                    WeatherClient.CurrentWeather weather;
+                    WeatherClient.ExtendedWeather extended = null;
+                    if (extendedEnabled) {
+                        extended = WeatherClient.fetchExtended(latitude, longitude);
+                        weather = extended.current;
+                    } else {
+                        weather = WeatherClient.fetchCurrent(latitude, longitude);
+                    }
+                    SharedPreferences.Editor editor = prefs.edit()
                             .putInt(SettingsActivity.WEATHER_TEMPERATURE, weather.temperatureCelsius)
                             .putInt(SettingsActivity.WEATHER_CODE, weather.weatherCode)
                             .putBoolean(SettingsActivity.WEATHER_IS_DAY, weather.daytime)
-                            .putLong(SettingsActivity.WEATHER_UPDATED_AT, System.currentTimeMillis())
-                            .apply();
+                            .putLong(SettingsActivity.WEATHER_UPDATED_AT,
+                                    System.currentTimeMillis());
+                    if (extended != null) {
+                        editor.putLong(SettingsActivity.WEATHER_EXTENDED_UPDATED_AT,
+                                        System.currentTimeMillis())
+                                .putString(SettingsActivity.WEATHER_EXTENDED_FORECAST,
+                                        encodeExtendedForecast(extended.nextHours))
+                                .putLong(SettingsActivity.WEATHER_EXTENDED_SUNRISE_AT,
+                                        extended.sunriseAtMs)
+                                .putLong(SettingsActivity.WEATHER_EXTENDED_SUNSET_AT,
+                                        extended.sunsetAtMs);
+                    }
+                    editor.apply();
                     success = true;
                 } catch (Exception ignored) {
-                    // 保留快取；舊裝置 TLS 或暫時斷線時不打擾相簿播放。
+                    // If the optional response is malformed or unavailable, retain the current
+                    // weather experience by retrying the small legacy request once.
+                    if (extendedEnabled) {
+                        try {
+                            WeatherClient.CurrentWeather weather =
+                                    WeatherClient.fetchCurrent(latitude, longitude);
+                            prefs.edit()
+                                    .putInt(SettingsActivity.WEATHER_TEMPERATURE,
+                                            weather.temperatureCelsius)
+                                    .putInt(SettingsActivity.WEATHER_CODE, weather.weatherCode)
+                                    .putBoolean(SettingsActivity.WEATHER_IS_DAY, weather.daytime)
+                                    .putLong(SettingsActivity.WEATHER_UPDATED_AT,
+                                            System.currentTimeMillis())
+                                    .apply();
+                            success = true;
+                        } catch (Exception ignoredCurrent) {
+                            // 保留快取；舊裝置 TLS 或暫時斷線時不打擾相簿播放。
+                        }
+                    }
                 }
                 final boolean requestSucceeded = success;
                 runOnUiThread(new Runnable() {
@@ -3809,6 +3908,7 @@ public final class PhotoClockActivity extends Activity {
         boolean compact = weatherCompactMode && !weatherShowLocation;
         compactWeatherRow.setVisibility(compact ? View.VISIBLE : View.GONE);
         weatherRow.setVisibility(compact ? View.GONE : View.VISIBLE);
+        updateExtendedWeatherFromCache();
         updateWeatherBlockVisibility();
         if (clockPanel != null) {
             clockPanel.requestLayout();
@@ -3825,7 +3925,90 @@ public final class PhotoClockActivity extends Activity {
     private void hideWeatherRows() {
         if (compactWeatherRow != null) compactWeatherRow.setVisibility(View.GONE);
         if (weatherRow != null) weatherRow.setVisibility(View.GONE);
+        if (weatherExtendedPanel != null) weatherExtendedPanel.setVisibility(View.GONE);
         updateWeatherBlockVisibility();
+    }
+
+    private String encodeExtendedForecast(List<WeatherClient.HourlyWeather> hours) {
+        StringBuilder encoded = new StringBuilder();
+        if (hours == null) return "";
+        for (WeatherClient.HourlyWeather hour : hours) {
+            if (encoded.length() > 0) encoded.append(';');
+            encoded.append(hour.localTime).append(',')
+                    .append(hour.temperatureCelsius).append(',')
+                    .append(hour.precipitationProbability).append(',')
+                    .append(hour.weatherCode);
+        }
+        return encoded.toString();
+    }
+
+    private List<WeatherClient.HourlyWeather> decodeExtendedForecast(String encoded) {
+        List<WeatherClient.HourlyWeather> hours =
+                new ArrayList<WeatherClient.HourlyWeather>();
+        if (encoded == null || encoded.length() == 0) return hours;
+        String[] entries = encoded.split(";", -1);
+        for (String entry : entries) {
+            String[] fields = entry.split(",", -1);
+            if (fields.length != 4) continue;
+            try {
+                hours.add(new WeatherClient.HourlyWeather(
+                        fields[0], Integer.parseInt(fields[1]),
+                        Integer.parseInt(fields[2]), Integer.parseInt(fields[3])));
+            } catch (NumberFormatException ignored) {
+                // Ignore one malformed cached item rather than hiding valid later items.
+            }
+        }
+        return hours;
+    }
+
+    private void updateExtendedWeatherFromCache() {
+        if (weatherExtendedPanel == null || !weatherExtendedEnabled) {
+            if (weatherExtendedPanel != null) weatherExtendedPanel.setVisibility(View.GONE);
+            return;
+        }
+        long updatedAt = prefs.getLong(SettingsActivity.WEATHER_EXTENDED_UPDATED_AT, 0L);
+        long age = System.currentTimeMillis() - updatedAt;
+        List<WeatherClient.HourlyWeather> hours = decodeExtendedForecast(
+                prefs.getString(SettingsActivity.WEATHER_EXTENDED_FORECAST, ""));
+        if (updatedAt <= 0L || age < 0L || age > WEATHER_MAX_AGE_MS || hours.isEmpty()) {
+            weatherExtendedPanel.setVisibility(View.GONE);
+            return;
+        }
+
+        StringBuilder forecast = new StringBuilder("未來三小時  ");
+        for (int i = 0; i < hours.size(); i++) {
+            if (i > 0) forecast.append("  ·  ");
+            WeatherClient.HourlyWeather hour = hours.get(i);
+            forecast.append(hour.localTime).append(' ')
+                    .append(hour.temperatureCelsius).append("°/")
+                    .append(hour.precipitationProbability).append('%');
+        }
+        weatherForecastText.setText(forecast.toString());
+
+        long sunriseAtMs = prefs.getLong(SettingsActivity.WEATHER_EXTENDED_SUNRISE_AT, -1L);
+        long sunsetAtMs = prefs.getLong(SettingsActivity.WEATHER_EXTENDED_SUNSET_AT, -1L);
+        if (sunriseAtMs > 0L && sunsetAtMs > sunriseAtMs) {
+            daylightProgressView.setTimes(sunriseAtMs, sunsetAtMs);
+            daylightProgressView.setNow(System.currentTimeMillis());
+            daylightProgressView.setVisibility(View.VISIBLE);
+            daylightLabel.setText("日出 " + weatherSunTime(sunriseAtMs)
+                    + "　日落 " + weatherSunTime(sunsetAtMs));
+            daylightLabel.setVisibility(View.VISIBLE);
+        } else {
+            daylightProgressView.setVisibility(View.GONE);
+            daylightLabel.setVisibility(View.GONE);
+        }
+        weatherExtendedPanel.setVisibility(View.VISIBLE);
+    }
+
+    private String weatherSunTime(long timeMs) {
+        if (weatherTimezone != null && weatherTimezone.length() > 0
+                && !"auto".equalsIgnoreCase(weatherTimezone)) {
+            weatherSunTimeFormat.setTimeZone(TimeZone.getTimeZone(weatherTimezone));
+        } else {
+            weatherSunTimeFormat.setTimeZone(TimeZone.getDefault());
+        }
+        return weatherSunTimeFormat.format(new Date(timeMs));
     }
 
     private double parseDouble(String value) {
