@@ -170,6 +170,7 @@ public final class PhotoClockActivity extends Activity {
     private WeatherIconView compactWeatherIcon;
     private TextView compactWeatherTemperature;
     private LinearLayout weatherRow;
+    private LinearLayout weatherContentPanel;
     private WeatherIconView weatherIcon;
     private TextView weatherTemperature;
     private TextView weatherLocation;
@@ -186,6 +187,7 @@ public final class PhotoClockActivity extends Activity {
     private TextView pomodoroText;
     private PomodoroProgressView pomodoroProgressView;
     private FrameLayout pomodoroFocusPanel;
+    private LinearLayout pomodoroInfoPanel;
     private Button settingsButton;
     private Button pomodoroButton;
     private StateListDrawable quickActionBackground;
@@ -1783,19 +1785,20 @@ public final class PhotoClockActivity extends Activity {
     }
 
     private void moveCompactWeatherRowToIndependentPanel() {
-        if (compactWeatherRow == null || weatherBlock == null) return;
-        if (compactWeatherRow.getParent() == weatherBlock) return;
+        if (compactWeatherRow == null || weatherContentPanel == null) return;
+        if (compactWeatherRow.getParent() == weatherContentPanel) return;
         if (compactWeatherRow.getParent() instanceof ViewGroup) {
             ((ViewGroup) compactWeatherRow.getParent()).removeView(compactWeatherRow);
         }
-        weatherBlock.addView(compactWeatherRow, compactWeatherBlockLayoutParams());
+        weatherContentPanel.addView(compactWeatherRow, 0, compactWeatherBlockLayoutParams());
     }
 
-    private FrameLayout.LayoutParams compactWeatherBlockLayoutParams() {
-        return new FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.WRAP_CONTENT,
-                FrameLayout.LayoutParams.WRAP_CONTENT,
-                Gravity.CENTER);
+    private LinearLayout.LayoutParams compactWeatherBlockLayoutParams() {
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+        params.gravity = Gravity.CENTER_HORIZONTAL;
+        return params;
     }
 
     private View buildInterface() {
@@ -1928,6 +1931,14 @@ public final class PhotoClockActivity extends Activity {
         weatherBlock = new AccessibleFrameLayout(this);
         weatherBlock.setContentDescription("天氣區塊");
 
+        weatherContentPanel = new LinearLayout(this);
+        weatherContentPanel.setOrientation(LinearLayout.VERTICAL);
+        weatherContentPanel.setGravity(Gravity.CENTER_HORIZONTAL);
+        weatherBlock.addView(weatherContentPanel, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                Gravity.CENTER));
+
         compactWeatherRow = new LinearLayout(this);
         compactWeatherRow.setOrientation(LinearLayout.HORIZONTAL);
         compactWeatherRow.setGravity(Gravity.BOTTOM);
@@ -1947,10 +1958,7 @@ public final class PhotoClockActivity extends Activity {
                 LinearLayout.LayoutParams.WRAP_CONTENT);
         compactTemperatureParams.setMargins(dp(3), 0, 0, 0);
         compactWeatherRow.addView(compactWeatherTemperature, compactTemperatureParams);
-        weatherBlock.addView(compactWeatherRow, new FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.WRAP_CONTENT,
-                FrameLayout.LayoutParams.WRAP_CONTENT,
-                Gravity.CENTER));
+        weatherContentPanel.addView(compactWeatherRow, compactWeatherBlockLayoutParams());
 
         weatherRow = new LinearLayout(this);
         weatherRow.setOrientation(LinearLayout.HORIZONTAL);
@@ -1982,12 +1990,12 @@ public final class PhotoClockActivity extends Activity {
                 LinearLayout.LayoutParams.WRAP_CONTENT);
         weatherLocationParams.setMargins(dp(8), 0, 0, 0);
         weatherRow.addView(weatherLocation, weatherLocationParams);
-        FrameLayout.LayoutParams weatherRowParams = new FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.WRAP_CONTENT,
-                FrameLayout.LayoutParams.WRAP_CONTENT,
-                Gravity.CENTER);
+        LinearLayout.LayoutParams weatherRowParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+        weatherRowParams.gravity = Gravity.CENTER_HORIZONTAL;
         weatherRowParams.topMargin = dp(3);
-        weatherBlock.addView(weatherRow, weatherRowParams);
+        weatherContentPanel.addView(weatherRow, weatherRowParams);
 
         weatherExtendedPanel = new LinearLayout(this);
         weatherExtendedPanel.setOrientation(LinearLayout.VERTICAL);
@@ -2019,11 +2027,11 @@ public final class PhotoClockActivity extends Activity {
         weatherExtendedPanel.addView(daylightLabel, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
 
-        FrameLayout.LayoutParams extendedWeatherParams = new FrameLayout.LayoutParams(
-                dp(220), FrameLayout.LayoutParams.WRAP_CONTENT,
-                Gravity.TOP | Gravity.CENTER_HORIZONTAL);
-        extendedWeatherParams.topMargin = dp(38);
-        weatherBlock.addView(weatherExtendedPanel, extendedWeatherParams);
+        LinearLayout.LayoutParams extendedWeatherParams = new LinearLayout.LayoutParams(
+                dp(220), LinearLayout.LayoutParams.WRAP_CONTENT);
+        extendedWeatherParams.gravity = Gravity.CENTER_HORIZONTAL;
+        extendedWeatherParams.topMargin = dp(4);
+        weatherContentPanel.addView(weatherExtendedPanel, extendedWeatherParams);
         clockPanel.addView(weatherBlock, clockBlockLayoutParams());
 
         pomodoroRow = new LinearLayout(this);
@@ -2086,6 +2094,16 @@ public final class PhotoClockActivity extends Activity {
                 resumePomodoroFromFocusScreen();
             }
         });
+        pomodoroInfoPanel = new LinearLayout(this);
+        pomodoroInfoPanel.setOrientation(LinearLayout.VERTICAL);
+        pomodoroInfoPanel.setGravity(Gravity.END);
+        pomodoroInfoPanel.setVisibility(View.GONE);
+        FrameLayout.LayoutParams pomodoroInfoParams = new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                Gravity.BOTTOM | Gravity.END);
+        pomodoroInfoParams.setMargins(dp(20), dp(20), dp(20), dp(20));
+        pomodoroFocusPanel.addView(pomodoroInfoPanel, pomodoroInfoParams);
         rootContainer.addView(pomodoroFocusPanel, new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 FrameLayout.LayoutParams.MATCH_PARENT));
@@ -3619,13 +3637,15 @@ public final class PhotoClockActivity extends Activity {
         if (pomodoroModeLayoutActive != active) {
             pomodoroModeLayoutActive = active;
             if (active) {
+                moveClockBlocksToPomodoroInfoPanel();
                 movePomodoroRowToFocusPanel();
                 pomodoroFocusPanel.setVisibility(View.VISIBLE);
             } else {
+                restoreClockBlocksAfterPomodoro();
                 movePomodoroRowToClockPanel();
                 pomodoroFocusPanel.setVisibility(View.GONE);
             }
-            applyClockTranslation();
+            if (!active) applyClockTranslation();
             if (rootContainer != null) {
                 rootContainer.post(new Runnable() {
                     @Override
@@ -3638,17 +3658,10 @@ public final class PhotoClockActivity extends Activity {
         }
         if (photoTime != null) {
             photoTime.setVisibility(clockTimeEnabled ? View.VISIBLE : View.GONE);
-            photoTime.setTextSize(active ? 38 : 64);
             photoTime.setAlpha(1.0f);
         }
         updateTimeBlockVisibility();
-        if (photoDate != null) photoDate.setTextSize(active ? 17 : 24);
         if (dateRow != null) dateRow.setVisibility(View.VISIBLE);
-        if (compactWeatherTemperature != null) compactWeatherTemperature.setTextSize(active ? 17 : 18);
-        if (weatherTemperature != null) weatherTemperature.setTextSize(active ? 17 : 20);
-        if (weatherLocation != null) weatherLocation.setTextSize(active ? 13 : 14);
-        if (compactWeatherIcon != null) resizeView(compactWeatherIcon, active ? 19 : 22, active ? 19 : 22);
-        if (weatherIcon != null) resizeView(weatherIcon, active ? 22 : 30, active ? 22 : 30);
         if (alarmRow != null) alarmRow.setVisibility(active ? View.GONE : alarmRow.getVisibility());
         updateDateBlockVisibility();
         int dimColor = Color.argb(120, 100, 100, 100);
@@ -3663,8 +3676,46 @@ public final class PhotoClockActivity extends Activity {
             pomodoroText.setTextSize(112);
             pomodoroText.setTextColor(isNightSleepActive ? dimColor : POMODORO_RED);
         }
-        applyClockScale();
+        if (active) {
+            applyClockComponentSizes(1.0f, 1.0f, 1.0f);
+        } else {
+            applyClockScale();
+        }
         if (active) applyPomodoroFocusLayout();
+    }
+
+    /** Uses the real clock views in a temporary default-size group without saving its position. */
+    private void moveClockBlocksToPomodoroInfoPanel() {
+        if (pomodoroInfoPanel == null) return;
+        moveBlockToPomodoroInfoPanel(timeBlock);
+        moveBlockToPomodoroInfoPanel(dateBlock);
+        moveBlockToPomodoroInfoPanel(weatherBlock);
+        resetBlockTranslation(timeBlock);
+        resetBlockTranslation(dateBlock);
+        resetBlockTranslation(weatherBlock);
+        pomodoroInfoPanel.setVisibility(View.VISIBLE);
+    }
+
+    private void moveBlockToPomodoroInfoPanel(View block) {
+        if (block == null || block.getParent() == pomodoroInfoPanel) return;
+        if (block.getParent() instanceof ViewGroup) {
+            ((ViewGroup) block.getParent()).removeView(block);
+        }
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+        params.gravity = Gravity.END;
+        pomodoroInfoPanel.addView(block, params);
+    }
+
+    private void restoreClockBlocksAfterPomodoro() {
+        if (legacyClockPanelActive) {
+            moveClockBlocksToLegacyPanel();
+        } else {
+            moveClockBlocksToIndependentPanel();
+        }
+        if (pomodoroInfoPanel != null) pomodoroInfoPanel.setVisibility(View.GONE);
+        applyClockBlockBackgrounds();
     }
 
     private void movePomodoroRowToFocusPanel() {
@@ -3733,7 +3784,7 @@ public final class PhotoClockActivity extends Activity {
                 FrameLayout.LayoutParams.WRAP_CONTENT,
                 Gravity.TOP | Gravity.END);
         params.setMargins(dp(28), dp(28), dp(16), dp(16));
-        clockPanel.addView(pomodoroRow, 1, params);
+        clockPanel.addView(pomodoroRow, Math.min(1, clockPanel.getChildCount()), params);
     }
 
     private void resizeView(View view, int widthDp, int heightDp) {

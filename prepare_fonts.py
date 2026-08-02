@@ -2,6 +2,7 @@ import os
 import urllib.request
 import subprocess
 import sys
+import zipfile
 
 from fontTools.ttLib import TTFont
 
@@ -18,6 +19,9 @@ fonts_map = {
     "font_sairastencil.ttf": "https://github.com/google/fonts/raw/main/ofl/sairastencilone/SairaStencilOne-Regular.ttf",
     "font_zendots.ttf": "https://github.com/google/fonts/raw/main/ofl/zendots/ZenDots-Regular.ttf",
 }
+
+iansui_name = "font_iansui.ttf"
+iansui_url = "https://github.com/ButTaiwan/iansui/releases/download/v1.020/iansui.zip"
 
 cjk_font_names = {
     "font_digital.ttf",
@@ -61,7 +65,8 @@ def rename_derived_font(path, family_name, postscript_name):
     font.save(path)
 
 requested_fonts = set(sys.argv[1:])
-unknown_fonts = requested_fonts - set(fonts_map)
+available_fonts = set(fonts_map) | {iansui_name}
+unknown_fonts = requested_fonts - available_fonts
 if unknown_fonts:
     raise ValueError(f"Unknown font names: {', '.join(sorted(unknown_fonts))}")
 
@@ -86,6 +91,49 @@ for name, url in fonts_map.items():
     subprocess.run(cmd, check=True)
     if name in derived_family_names:
         rename_derived_font(out_path, *derived_family_names[name])
+    size_kb = os.path.getsize(out_path) / 1024.0
+    print(f"Generated {out_path}: {size_kb:.1f} KB")
+
+if not requested_fonts or iansui_name in requested_fonts:
+    print(f"Processing {iansui_name}...")
+    archive_path = os.path.join(temp_dir, "iansui-v1.020.zip")
+    raw_path = os.path.join(temp_dir, "Iansui-Regular.ttf")
+    out_path = os.path.join(target_dir, iansui_name)
+    if not os.path.exists(archive_path) or os.path.getsize(archive_path) < 1000:
+        req = urllib.request.Request(iansui_url, headers=headers)
+        with urllib.request.urlopen(req) as resp, open(archive_path, "wb") as out_file:
+            out_file.write(resp.read())
+    with zipfile.ZipFile(archive_path) as archive:
+        with archive.open("Iansui-Regular.ttf") as source, open(raw_path, "wb") as out_file:
+            out_file.write(source.read())
+
+    # Preserve every shipped glyph and include all characters now used by the UI.
+    # This prevents a new Chinese label from silently falling back to a system font.
+    requested_codepoints = set()
+    if os.path.exists(out_path):
+        existing_font = TTFont(out_path)
+        for table in existing_font["cmap"].tables:
+            requested_codepoints.update(table.cmap)
+        existing_font.close()
+    java_root = os.path.join(os.path.dirname(__file__), "app", "src", "main", "java")
+    for root, _, files in os.walk(java_root):
+        for file_name in files:
+            if not file_name.endswith(".java"):
+                continue
+            with open(os.path.join(root, file_name), encoding="utf-8") as source:
+                requested_codepoints.update(ord(char) for char in source.read())
+
+    upstream_font = TTFont(raw_path)
+    available_codepoints = set()
+    for table in upstream_font["cmap"].tables:
+        available_codepoints.update(table.cmap)
+    upstream_font.close()
+    requested_codepoints.intersection_update(available_codepoints)
+    unicodes = ",".join(f"U+{codepoint:04X}" for codepoint in sorted(requested_codepoints))
+    subprocess.run([
+        sys.executable, "-m", "fontTools.subset", raw_path,
+        f"--unicodes={unicodes}", f"--output-file={out_path}"
+    ], check=True)
     size_kb = os.path.getsize(out_path) / 1024.0
     print(f"Generated {out_path}: {size_kb:.1f} KB")
 
