@@ -61,4 +61,27 @@ public final class PerformanceModePolicyTest {
                 Float.NaN,
                 true));
     }
+
+    @Test
+    public void missingTemperatureDoesNotUndoAPreviousDowngrade() {
+        assertEquals(PerformanceModePolicy.STANDARD, PerformanceModePolicy.resolveEffectiveMode(
+                PerformanceModePolicy.SHOWCASE,
+                PerformanceModePolicy.STANDARD,
+                Float.NaN,
+                false));
+    }
+
+    @Test
+    public void missingTemperatureBlocksInitialShowcaseMode() {
+        assertEquals(PerformanceModePolicy.STANDARD, PerformanceModePolicy.resolveEffectiveMode(
+                PerformanceModePolicy.SHOWCASE,
+                PerformanceModePolicy.SHOWCASE,
+                Float.NaN,
+                false));
+        assertEquals(PerformanceModePolicy.ECO, PerformanceModePolicy.resolveEffectiveMode(
+                PerformanceModePolicy.SHOWCASE,
+                PerformanceModePolicy.ECO,
+                Float.NaN,
+                false));
+    }
 }

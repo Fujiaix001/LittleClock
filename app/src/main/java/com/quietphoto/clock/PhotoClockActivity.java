@@ -1349,9 +1349,7 @@ public final class PhotoClockActivity extends Activity {
         if (savedFavorites != null) favoritePhotos.addAll(savedFavorites);
         if (savedHidden != null) hiddenPhotos.addAll(savedHidden);
 
-        applyPolaroidStyle();
-        updateShowcaseColorOverlay();
-        updateClockStyle();
+        refreshPerformanceModePresentation();
         applyClockScale();
     }
 
@@ -1407,6 +1405,18 @@ public final class PhotoClockActivity extends Activity {
         effectivePerformanceMode = normalized;
         if (rootContainer == null || !activityResumed) return;
 
+        refreshPerformanceModePresentation();
+        if (notifyUser && selectedPerformanceMode == PerformanceModePolicy.SHOWCASE
+                && previous == PerformanceModePolicy.SHOWCASE
+                && normalized != PerformanceModePolicy.SHOWCASE) {
+            String message = normalized == PerformanceModePolicy.ECO
+                    ? "裝置溫度較高，已降低效果"
+                    : "裝置資源緊張，已降低效果";
+            Toast.makeText(this, message, Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    private void refreshPerformanceModePresentation() {
         applyPolaroidStyle();
         updateShowcaseColorOverlay();
         updateClockStyle();
@@ -1417,14 +1427,6 @@ public final class PhotoClockActivity extends Activity {
             }
         } else {
             stopPhotoPan();
-        }
-        if (notifyUser && selectedPerformanceMode == PerformanceModePolicy.SHOWCASE
-                && previous == PerformanceModePolicy.SHOWCASE
-                && normalized != PerformanceModePolicy.SHOWCASE) {
-            String message = normalized == PerformanceModePolicy.ECO
-                    ? "裝置溫度較高，已降低效果"
-                    : "裝置資源緊張，已降低效果";
-            Toast.makeText(this, message, Toast.LENGTH_SHORT).show();
         }
     }
 

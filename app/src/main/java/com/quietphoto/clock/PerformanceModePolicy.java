@@ -52,17 +52,18 @@ final class PerformanceModePolicy {
         if (memoryPressure) {
             return current == ECO ? ECO : STANDARD;
         }
-        if (!Float.isNaN(batteryTemperatureC)) {
-            if (batteryTemperatureC >= ECO_DOWNGRADE_TEMPERATURE_C) return ECO;
-            if (batteryTemperatureC >= STANDARD_DOWNGRADE_TEMPERATURE_C) {
-                return STANDARD;
-            }
-            if (current == ECO && batteryTemperatureC > SHOWCASE_RECOVERY_TEMPERATURE_C) {
-                return ECO;
-            }
-            if (current == STANDARD && batteryTemperatureC > SHOWCASE_RECOVERY_TEMPERATURE_C) {
-                return STANDARD;
-            }
+        if (Float.isNaN(batteryTemperatureC)) {
+            return current == ECO ? ECO : STANDARD;
+        }
+        if (batteryTemperatureC >= ECO_DOWNGRADE_TEMPERATURE_C) return ECO;
+        if (batteryTemperatureC >= STANDARD_DOWNGRADE_TEMPERATURE_C) {
+            return STANDARD;
+        }
+        if (current == ECO && batteryTemperatureC > SHOWCASE_RECOVERY_TEMPERATURE_C) {
+            return ECO;
+        }
+        if (current == STANDARD && batteryTemperatureC > SHOWCASE_RECOVERY_TEMPERATURE_C) {
+            return STANDARD;
         }
         return SHOWCASE;
     }
