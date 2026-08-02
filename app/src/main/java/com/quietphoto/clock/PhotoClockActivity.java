@@ -181,8 +181,10 @@ public final class PhotoClockActivity extends Activity {
     private AlarmIconView alarmIcon;
     private TextView alarmTimeText;
     private LinearLayout pomodoroRow;
+    private TextView pomodoroAdvancedInfo;
     private TextView pomodoroLabel;
     private TextView pomodoroText;
+    private PomodoroProgressView pomodoroProgressView;
     private FrameLayout pomodoroFocusPanel;
     private Button settingsButton;
     private Button pomodoroButton;
@@ -211,6 +213,7 @@ public final class PhotoClockActivity extends Activity {
     private boolean clockDateEnabled = true;
     private boolean pomodoroModeLayoutActive;
     private boolean pomodoroSettingsLocked;
+    private boolean pomodoroAdvancedDisplay;
     private long lastAlarmFiredMinute = -1;
     private PhotoSource currentPhotoSource;
 
@@ -1351,6 +1354,9 @@ public final class PhotoClockActivity extends Activity {
         weatherTimezone = prefs.getString(SettingsActivity.WEATHER_TIMEZONE, "auto");
         weatherLatitude = parseDouble(prefs.getString(SettingsActivity.WEATHER_LATITUDE, null));
         weatherLongitude = parseDouble(prefs.getString(SettingsActivity.WEATHER_LONGITUDE, null));
+        pomodoroAdvancedDisplay = PomodoroHelper.normalizeDisplayMode(prefs.getInt(
+                PomodoroHelper.PREF_DISPLAY_MODE, PomodoroHelper.DISPLAY_MODE_ORIGINAL))
+                == PomodoroHelper.DISPLAY_MODE_ADVANCED;
         loadClockScalePreferences(0.75f);
         applyClockLayoutMode();
 
@@ -2025,6 +2031,15 @@ public final class PhotoClockActivity extends Activity {
         pomodoroRow.setOrientation(LinearLayout.VERTICAL);
         pomodoroRow.setGravity(Gravity.CENTER);
         pomodoroRow.setVisibility(View.GONE);
+        pomodoroAdvancedInfo = new TextView(this);
+        pomodoroAdvancedInfo.setTextSize(15);
+        pomodoroAdvancedInfo.setTextColor(SECONDARY);
+        pomodoroAdvancedInfo.setGravity(Gravity.CENTER_HORIZONTAL);
+        pomodoroAdvancedInfo.setIncludeFontPadding(false);
+        pomodoroAdvancedInfo.setVisibility(View.GONE);
+        pomodoroAdvancedInfo.setTypeface(FontManager.getPomodoroChineseFont(this));
+        pomodoroRow.addView(pomodoroAdvancedInfo, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT));
         pomodoroLabel = new TextView(this);
         pomodoroLabel.setTextSize(24);
         pomodoroLabel.setTextColor(Color.WHITE);
@@ -2045,6 +2060,12 @@ public final class PhotoClockActivity extends Activity {
         pomodoroRow.addView(pomodoroText, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT));
+        pomodoroProgressView = new PomodoroProgressView(this);
+        pomodoroProgressView.setVisibility(View.GONE);
+        LinearLayout.LayoutParams pomodoroProgressParams = new LinearLayout.LayoutParams(
+                dp(240), dp(10));
+        pomodoroProgressParams.setMargins(dp(4), dp(8), dp(4), 0);
+        pomodoroRow.addView(pomodoroProgressView, pomodoroProgressParams);
 
         rootContainer.addView(clockPanel, new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
@@ -3553,16 +3574,44 @@ public final class PhotoClockActivity extends Activity {
             updatePomodoroQuickActions(false);
             pomodoroFocusPanel.setClickable(false);
             pomodoroRow.setVisibility(View.GONE);
+            applyPomodoroAdvancedDisplay(null);
             return;
         }
         pomodoroLabel.setText(pomodoroEnglishLabel(snapshot));
         pomodoroText.setText(PomodoroHelper.formatRemaining(snapshot.remainingMs));
+        applyPomodoroAdvancedDisplay(snapshot);
         applyPomodoroModeLayout(true);
         updatePomodoroQuickActions(snapshot.running);
         // 暫停時整個倒數畫面就是「繼續」按鈕；運行中仍讓既有觸控行為處理。
         pomodoroFocusPanel.setClickable(!snapshot.running);
         pomodoroRow.setVisibility(View.VISIBLE);
         if (activityResumed) schedulePhotoTicker();
+    }
+
+    private void applyPomodoroAdvancedDisplay(PomodoroHelper.Snapshot snapshot) {
+        boolean visible = pomodoroAdvancedDisplay && snapshot != null;
+        if (pomodoroAdvancedInfo != null) {
+            pomodoroAdvancedInfo.setVisibility(visible ? View.VISIBLE : View.GONE);
+            if (visible) {
+                int cycle = snapshot.completedFocusSessions
+                        + (PomodoroHelper.PHASE_FOCUS.equals(snapshot.phase) ? 1 : 0);
+                pomodoroAdvancedInfo.setText(
+                        PomodoroHelper.phaseLabel(snapshot.phase)
+                                + "　·　第 " + Math.max(1, cycle) + " 輪"
+                                + "　·　已完成 " + snapshot.completedFocusSessions + " 次");
+            }
+        }
+        if (pomodoroProgressView != null) {
+            pomodoroProgressView.setVisibility(visible ? View.VISIBLE : View.GONE);
+            if (visible) {
+                float progress = snapshot.phaseDurationMs <= 0L ? 0.0f
+                        : snapshot.elapsedMs / (float) snapshot.phaseDurationMs;
+                pomodoroProgressView.setProgress(progress);
+                pomodoroProgressView.setProgressColor(
+                        PomodoroHelper.PHASE_FOCUS.equals(snapshot.phase)
+                                ? POMODORO_RED : Color.rgb(104, 213, 216));
+            }
+        }
     }
 
     /** A paused session is intentionally resumed from the focus screen itself. */
@@ -3670,6 +3719,15 @@ public final class PhotoClockActivity extends Activity {
         }
         boolean portrait = getResources().getConfiguration().orientation
                 == Configuration.ORIENTATION_PORTRAIT;
+        if (pomodoroProgressView != null
+                && pomodoroProgressView.getVisibility() == View.VISIBLE) {
+            ViewGroup.LayoutParams progressParams = pomodoroProgressView.getLayoutParams();
+            int progressWidth = Math.max(dp(120), Math.min(dp(240), panelWidth - dp(32)));
+            if (progressParams != null && progressParams.width != progressWidth) {
+                progressParams.width = progressWidth;
+                pomodoroProgressView.setLayoutParams(progressParams);
+            }
+        }
         float targetSp = portrait ? 100.0f : 112.0f;
         pomodoroText.setTextSize(targetSp);
         float availableWidth = panelWidth - dp(portrait ? 32 : 112);

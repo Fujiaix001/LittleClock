@@ -21,6 +21,11 @@ public final class PomodoroHelper {
     public static final String PREF_FOCUS_MINUTES = "pomodoro_focus_minutes";
     public static final String PREF_SHORT_BREAK_MINUTES = "pomodoro_short_break_minutes";
     public static final String PREF_LONG_BREAK_MINUTES = "pomodoro_long_break_minutes";
+    public static final String PREF_DISPLAY_MODE = "pomodoro_display_mode";
+    public static final int DISPLAY_MODE_ORIGINAL = 0;
+    public static final int DISPLAY_MODE_ADVANCED = 1;
+
+    private static final String PREF_SESSION_DURATION_MS = "pomodoro_session_duration_ms";
 
     private static final String PREF_HAS_SESSION = "pomodoro_has_session";
     private static final String PREF_RUNNING = "pomodoro_running";
@@ -43,14 +48,18 @@ public final class PomodoroHelper {
         public final String phase;
         public final long remainingMs;
         public final int completedFocusSessions;
+        public final long phaseDurationMs;
+        public final long elapsedMs;
 
         Snapshot(boolean hasSession, boolean running, String phase, long remainingMs,
-                int completedFocusSessions) {
+                int completedFocusSessions, long phaseDurationMs, long elapsedMs) {
             this.hasSession = hasSession;
             this.running = running;
             this.phase = phase;
             this.remainingMs = remainingMs;
             this.completedFocusSessions = completedFocusSessions;
+            this.phaseDurationMs = phaseDurationMs;
+            this.elapsedMs = elapsedMs;
         }
     }
 
@@ -74,8 +83,12 @@ public final class PomodoroHelper {
             String phase = prefs.getString(PREF_PHASE, PHASE_FOCUS);
             long remaining = running ? remainingRunningMs(prefs) : prefs.getLong(
                     PREF_REMAINING_MS, durationForPhase(prefs, phase));
+            long duration = prefs.getLong(PREF_SESSION_DURATION_MS,
+                    durationForPhase(prefs, phase));
+            duration = Math.max(1L, duration);
+            long elapsed = Math.max(0L, Math.min(duration, duration - remaining));
             return new Snapshot(hasSession, running, phase, Math.max(0L, remaining),
-                    prefs.getInt(PREF_COMPLETED_FOCUS, 0));
+                    prefs.getInt(PREF_COMPLETED_FOCUS, 0), duration, elapsed);
         }
     }
 
@@ -83,11 +96,14 @@ public final class PomodoroHelper {
         synchronized (LOCK) {
             SharedPreferences prefs = prefs(context);
             cancelEndAlarm(context);
+            String normalizedPhase = normalizePhase(phase);
+            long duration = durationForPhase(prefs, normalizedPhase);
             prefs.edit()
                     .putBoolean(PREF_HAS_SESSION, true)
                     .putBoolean(PREF_RUNNING, false)
-                    .putString(PREF_PHASE, normalizePhase(phase))
-                    .putLong(PREF_REMAINING_MS, durationForPhase(prefs, normalizePhase(phase)))
+                    .putString(PREF_PHASE, normalizedPhase)
+                    .putLong(PREF_REMAINING_MS, duration)
+                    .putLong(PREF_SESSION_DURATION_MS, duration)
                     .remove(PREF_END_ELAPSED)
                     .remove(PREF_STARTED_ELAPSED)
                     .remove(PREF_END_WALL)
@@ -100,8 +116,10 @@ public final class PomodoroHelper {
         synchronized (LOCK) {
             SharedPreferences prefs = prefs(context);
             String phase = normalizePhase(prefs.getString(PREF_PHASE, PHASE_FOCUS));
+            long duration = prefs.getLong(PREF_SESSION_DURATION_MS,
+                    durationForPhase(prefs, phase));
             long remaining = Math.max(1000L, prefs.getLong(PREF_REMAINING_MS,
-                    durationForPhase(prefs, phase)));
+                    duration));
             long nowElapsed = SystemClock.elapsedRealtime();
             long nowWall = System.currentTimeMillis();
             prefs.edit()
@@ -111,6 +129,7 @@ public final class PomodoroHelper {
                     .putLong(PREF_END_ELAPSED, nowElapsed + remaining)
                     .putLong(PREF_STARTED_ELAPSED, nowElapsed)
                     .putLong(PREF_END_WALL, nowWall + remaining)
+                    .putLong(PREF_SESSION_DURATION_MS, duration)
                     .putLong(PREF_REMAINING_MS, remaining)
                     .apply();
             return scheduleEndAlarm(context, remaining);
@@ -132,6 +151,7 @@ public final class PomodoroHelper {
                     .putLong(PREF_END_ELAPSED, nowElapsed + remaining)
                     .putLong(PREF_STARTED_ELAPSED, nowElapsed)
                     .putLong(PREF_END_WALL, nowWall + remaining)
+                    .putLong(PREF_SESSION_DURATION_MS, remaining)
                     .putLong(PREF_REMAINING_MS, remaining)
                     .apply();
             return scheduleEndAlarm(context, remaining);
@@ -162,6 +182,7 @@ public final class PomodoroHelper {
                     .putBoolean(PREF_RUNNING, false)
                     .putString(PREF_PHASE, PHASE_FOCUS)
                     .remove(PREF_REMAINING_MS)
+                    .remove(PREF_SESSION_DURATION_MS)
                     .remove(PREF_END_ELAPSED)
                     .remove(PREF_STARTED_ELAPSED)
                     .remove(PREF_END_WALL)
@@ -215,6 +236,10 @@ public final class PomodoroHelper {
         return "專注";
     }
 
+    public static int normalizeDisplayMode(int mode) {
+        return mode == DISPLAY_MODE_ADVANCED ? DISPLAY_MODE_ADVANCED : DISPLAY_MODE_ORIGINAL;
+    }
+
     public static String formatRemaining(long remainingMs) {
         long totalSeconds = Math.max(0L, (remainingMs + 999L) / 1000L);
         return String.format(java.util.Locale.TAIWAN, "%02d:%02d",
@@ -232,11 +257,13 @@ public final class PomodoroHelper {
         } else {
             next = PHASE_FOCUS;
         }
+        long duration = durationForPhase(prefs, next);
         prefs.edit()
                 .putBoolean(PREF_HAS_SESSION, true)
                 .putBoolean(PREF_RUNNING, false)
                 .putString(PREF_PHASE, next)
-                .putLong(PREF_REMAINING_MS, durationForPhase(prefs, next))
+                .putLong(PREF_REMAINING_MS, duration)
+                .putLong(PREF_SESSION_DURATION_MS, duration)
                 .putInt(PREF_COMPLETED_FOCUS, completed)
                 .remove(PREF_END_ELAPSED)
                 .remove(PREF_STARTED_ELAPSED)

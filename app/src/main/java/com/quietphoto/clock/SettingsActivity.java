@@ -168,6 +168,7 @@ public final class SettingsActivity extends Activity {
     private int pomodoroFocusMinutes = PomodoroHelper.DEFAULT_FOCUS_MINUTES;
     private int pomodoroShortBreakMinutes = PomodoroHelper.DEFAULT_SHORT_BREAK_MINUTES;
     private int pomodoroLongBreakMinutes = PomodoroHelper.DEFAULT_LONG_BREAK_MINUTES;
+    private int pomodoroDisplayMode = PomodoroHelper.DISPLAY_MODE_ORIGINAL;
 
     private File currentDirectory;
 
@@ -202,6 +203,7 @@ public final class SettingsActivity extends Activity {
     private Spinner dateFontSpinner;
     private Spinner weatherFontSpinner;
     private Spinner transitionSpinner;
+    private Spinner pomodoroDisplayModeSpinner;
     private Spinner displayModeSpinner;
     private Spinner performanceModeSpinner;
     private Spinner clockLayoutModeSpinner;
@@ -303,6 +305,8 @@ public final class SettingsActivity extends Activity {
                 PomodoroHelper.DEFAULT_SHORT_BREAK_MINUTES);
         pomodoroLongBreakMinutes = prefs.getInt(PomodoroHelper.PREF_LONG_BREAK_MINUTES,
                 PomodoroHelper.DEFAULT_LONG_BREAK_MINUTES);
+        pomodoroDisplayMode = PomodoroHelper.normalizeDisplayMode(prefs.getInt(
+                PomodoroHelper.PREF_DISPLAY_MODE, PomodoroHelper.DISPLAY_MODE_ORIGINAL));
 
         Set<String> saved = prefs.getStringSet(PHOTO_FOLDERS, null);
         if (saved != null && !saved.isEmpty()) {
@@ -671,6 +675,11 @@ public final class SettingsActivity extends Activity {
 
         addDivider(mainSection);
         addInlineSectionHeader(mainSection, "番茄鐘", "POMODORO");
+        pomodoroDisplayModeSpinner = addSpinner(
+                mainSection,
+                "番茄鐘顯示",
+                new String[] { "原始模式", "進階模式" },
+                pomodoroDisplayMode);
         addPomodoroDurationRow(mainSection, "專注", 0);
         addPomodoroDurationRow(mainSection, "短休息", 1);
         addPomodoroDurationRow(mainSection, "長休息", 2);
@@ -1775,6 +1784,9 @@ public final class SettingsActivity extends Activity {
                 .putInt(PomodoroHelper.PREF_FOCUS_MINUTES, pomodoroFocusMinutes)
                 .putInt(PomodoroHelper.PREF_SHORT_BREAK_MINUTES, pomodoroShortBreakMinutes)
                 .putInt(PomodoroHelper.PREF_LONG_BREAK_MINUTES, pomodoroLongBreakMinutes)
+                .putInt(PomodoroHelper.PREF_DISPLAY_MODE,
+                        PomodoroHelper.normalizeDisplayMode(
+                                pomodoroDisplayModeSpinner.getSelectedItemPosition()))
                 .putStringSet(PHOTO_FOLDERS, new HashSet<String>(selectedFolders));
         if (resetClockLayoutRequested) {
             PhotoClockActivity.resetClockLayoutPreferences(editor);
