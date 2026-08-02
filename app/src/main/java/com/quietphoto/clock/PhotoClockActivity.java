@@ -17,7 +17,6 @@ import android.graphics.BitmapFactory;
 import android.graphics.Color;
 import android.graphics.Matrix;
 import android.graphics.Rect;
-import android.graphics.RectF;
 import android.graphics.Typeface;
 import android.graphics.drawable.StateListDrawable;
 import android.graphics.drawable.GradientDrawable;
@@ -109,6 +108,14 @@ public final class PhotoClockActivity extends Activity {
     public static final int CLOCK_SIZE_MODE_OVERLAP = ClockSizeModePolicy.OVERLAP;
     public static final int CLOCK_SIZE_MODE_AVOID = ClockSizeModePolicy.AVOID;
     public static final int CLOCK_SIZE_MODE_GROUP = ClockSizeModePolicy.GROUP;
+    public static final String CLOCK_LAYOUT_MODE = "clock_layout_mode";
+    public static final int CLOCK_LAYOUT_MODE_ORIGINAL = ClockLayoutPolicy.ORIGINAL;
+    public static final int CLOCK_LAYOUT_MODE_FREE = ClockLayoutPolicy.FREE;
+    public static final String CLOCK_ORIGINAL_SCALE_MODE = "clock_original_scale_mode";
+    public static final int CLOCK_ORIGINAL_SCALE_LINKED =
+            ClockLayoutPolicy.ORIGINAL_SCALE_LINKED;
+    public static final int CLOCK_ORIGINAL_SCALE_AVOID =
+            ClockLayoutPolicy.ORIGINAL_SCALE_AVOID;
     public static final String LEGACY_BIND_SCALE = "bind_scale";
     private static final String CLOCK_TIME_SCALE_FACTOR = "clock_time_scale_factor";
     private static final String CLOCK_DATE_SCALE_FACTOR = "clock_date_scale_factor";
@@ -289,18 +296,13 @@ public final class PhotoClockActivity extends Activity {
     private float dateBlockBaseY;
     private float weatherBlockBaseX;
     private float weatherBlockBaseY;
-    private int clockSizeMode = CLOCK_SIZE_MODE_OVERLAP;
+    private int clockLayoutMode = CLOCK_LAYOUT_MODE_ORIGINAL;
+    private int originalScaleMode = CLOCK_ORIGINAL_SCALE_LINKED;
     private boolean legacyClockPanelActive;
     private float legacyClockTranslationX;
     private float legacyClockTranslationY;
     private float legacyClockStartTranslationX;
     private float legacyClockStartTranslationY;
-    private boolean avoidLayoutScheduled;
-    private int avoidLayoutAnchorTarget = SCALE_TARGET_NONE;
-    private final RectF avoidTimeRect = new RectF();
-    private final RectF avoidDateRect = new RectF();
-    private final RectF avoidWeatherRect = new RectF();
-    private final int[] avoidLayoutOrder = new int[3];
     private float burnInOffsetX;
     private float burnInOffsetY;
     private ScaleGestureDetector scaleGestureDetector;
@@ -440,22 +442,6 @@ public final class PhotoClockActivity extends Activity {
             burnInOffsetY = random.nextInt(maxOffset * 2 + 1) - maxOffset;
             applyClockTranslation();
             photoHandler.postDelayed(this, BURN_IN_INTERVAL_MS);
-        }
-    };
-
-    private final Runnable avoidLayoutRunnable = new Runnable() {
-        @Override
-        public void run() {
-            avoidLayoutScheduled = false;
-            if (clockSizeMode != CLOCK_SIZE_MODE_AVOID || pomodoroModeLayoutActive) {
-                return;
-            }
-            int anchorTarget = avoidLayoutAnchorTarget;
-            avoidLayoutAnchorTarget = SCALE_TARGET_NONE;
-            applyAvoidingClockLayout(anchorTarget);
-            if (!isScalingClock) {
-                saveAllClockPositions();
-            }
         }
     };
 
@@ -672,7 +658,6 @@ public final class PhotoClockActivity extends Activity {
         photoHandler.removeCallbacks(safCatalogRefreshRunnable);
         photoHandler.removeCallbacks(pomodoroDialogTicker);
         photoHandler.removeCallbacks(hideFocusReminderRunnable);
-        cancelAvoidingClockLayout();
         if (focusReminderOverlay != null) {
             focusReminderOverlay.setVisibility(View.GONE);
         }
@@ -693,7 +678,6 @@ public final class PhotoClockActivity extends Activity {
         photoHandler.removeCallbacks(safCatalogRefreshRunnable);
         photoHandler.removeCallbacks(pomodoroDialogTicker);
         photoHandler.removeCallbacks(hideFocusReminderRunnable);
-        cancelAvoidingClockLayout();
         unregisterMediaObserver();
         unregisterLightSensor();
         stopPhotoSlideshow();
@@ -701,14 +685,6 @@ public final class PhotoClockActivity extends Activity {
         photoDecodeExecutor.shutdownNow();
         weatherExecutor.shutdownNow();
         super.onDestroy();
-    }
-
-    private void cancelAvoidingClockLayout() {
-        if (clockPanel != null) {
-            clockPanel.removeCallbacks(avoidLayoutRunnable);
-        }
-        avoidLayoutScheduled = false;
-        avoidLayoutAnchorTarget = SCALE_TARGET_NONE;
     }
 
     @Override
@@ -1446,7 +1422,7 @@ public final class PhotoClockActivity extends Activity {
      */
     private void applyClockLayoutMode() {
         if (clockPanel == null || legacyClockPanel == null) return;
-        boolean shouldUseLegacyPanel = clockSizeMode == CLOCK_SIZE_MODE_GROUP;
+        boolean shouldUseLegacyPanel = isOriginalLayout();
         if (shouldUseLegacyPanel == legacyClockPanelActive) return;
         if (shouldUseLegacyPanel) {
             enterLegacyClockPanelMode();
@@ -2108,15 +2084,26 @@ public final class PhotoClockActivity extends Activity {
     private void loadClockScalePreferences(float defaultScale) {
         clockScaleFactor = clampClockScale(prefs.getFloat(
                 orientationKey(CLOCK_SCALE_FACTOR), defaultScale));
-        if (prefs.contains(CLOCK_SIZE_MODE)) {
-            clockSizeMode = ClockSizeModePolicy.normalize(
-                    prefs.getInt(CLOCK_SIZE_MODE, CLOCK_SIZE_MODE_OVERLAP));
+        boolean hasLegacySizeMode = prefs.contains(CLOCK_SIZE_MODE);
+        int legacySizeMode = ClockSizeModePolicy.normalize(
+                prefs.getInt(CLOCK_SIZE_MODE, CLOCK_SIZE_MODE_OVERLAP));
+        if (prefs.contains(CLOCK_LAYOUT_MODE)) {
+            clockLayoutMode = ClockLayoutPolicy.normalizeLayout(
+                    prefs.getInt(CLOCK_LAYOUT_MODE, CLOCK_LAYOUT_MODE_ORIGINAL));
+            originalScaleMode = ClockLayoutPolicy.normalizeOriginalScale(
+                    prefs.getInt(CLOCK_ORIGINAL_SCALE_MODE,
+                            CLOCK_ORIGINAL_SCALE_LINKED));
+        } else if (hasLegacySizeMode) {
+            clockLayoutMode = ClockLayoutPolicy.layoutFromLegacySizeMode(legacySizeMode);
+            originalScaleMode = ClockLayoutPolicy.originalScaleFromLegacySizeMode(legacySizeMode);
         } else {
             boolean legacyLinked = prefs.getBoolean(CLOCK_SIZES_LINKED,
                     prefs.getBoolean(LEGACY_BIND_SCALE, true));
-            clockSizeMode = ClockSizeModePolicy.fromLegacyLinked(legacyLinked);
+            clockLayoutMode = CLOCK_LAYOUT_MODE_ORIGINAL;
+            originalScaleMode = legacyLinked
+                    ? CLOCK_ORIGINAL_SCALE_LINKED : CLOCK_ORIGINAL_SCALE_AVOID;
         }
-        clockSizesLinked = ClockSizeModePolicy.usesLinkedScale(clockSizeMode);
+        clockSizesLinked = isLinkedOriginalLayout();
         float loadedTimeScale = loadComponentScale(
                 CLOCK_TIME_SCALE_FACTOR, LEGACY_TIME_SCALE_FACTOR, clockScaleFactor);
         float loadedDateScale = loadComponentScale(
@@ -2146,6 +2133,18 @@ public final class PhotoClockActivity extends Activity {
         return clampClockScale(prefs.getFloat(orientationKey(legacyKey), defaultScale));
     }
 
+    private boolean isOriginalLayout() {
+        return ClockLayoutPolicy.isOriginal(clockLayoutMode);
+    }
+
+    private boolean isLinkedOriginalLayout() {
+        return ClockLayoutPolicy.isLinkedOriginal(clockLayoutMode, originalScaleMode);
+    }
+
+    private int legacySizeMode() {
+        return ClockLayoutPolicy.legacySizeMode(clockLayoutMode, originalScaleMode);
+    }
+
     private void applyClockScale() {
         if (clockPanel == null) return;
         if (pomodoroModeLayoutActive) {
@@ -2158,163 +2157,27 @@ public final class PhotoClockActivity extends Activity {
             return;
         }
 
-        if (clockSizeMode == CLOCK_SIZE_MODE_GROUP) {
-            // The linked mode deliberately scales the original wrap-content panel, not the
-            // independent blocks' full-screen coordinate system.
-            applyClockComponentSizes(1.0f, 1.0f, 1.0f);
-            applyLegacyClockScale();
+        if (legacyClockPanelActive) {
+            if (isLinkedOriginalLayout()) {
+                // The linked mode deliberately scales the original wrap-content panel, not the
+                // independent blocks' full-screen coordinate system.
+                applyClockComponentSizes(1.0f, 1.0f, 1.0f);
+                applyLegacyClockScale();
+            } else {
+                // The .13-style vertical layout naturally separates rows when one component
+                // grows. This keeps the avoidance effect playful without moving free blocks.
+                legacyClockPanel.setScaleX(1.0f);
+                legacyClockPanel.setScaleY(1.0f);
+                applyClockComponentSizes(timeScaleFactor, dateScaleFactor, weatherScaleFactor);
+                applyLegacyClockTranslation();
+                legacyClockPanel.requestLayout();
+            }
             return;
         }
 
         clockPanel.setScaleX(1.0f);
         clockPanel.setScaleY(1.0f);
-        if (clockSizeMode == CLOCK_SIZE_MODE_OVERLAP) {
-            applyClockComponentSizes(
-                    clockScaleFactor, clockScaleFactor, clockScaleFactor);
-        } else {
-            applyClockComponentSizes(timeScaleFactor, dateScaleFactor, weatherScaleFactor);
-            scheduleAvoidingClockLayout();
-        }
-    }
-
-    private void scheduleAvoidingClockLayout() {
-        if (clockPanel == null || clockSizeMode != CLOCK_SIZE_MODE_AVOID
-                || pomodoroModeLayoutActive) {
-            return;
-        }
-        if (activeScaleTarget != SCALE_TARGET_NONE) {
-            avoidLayoutAnchorTarget = activeScaleTarget;
-        }
-        if (avoidLayoutScheduled) return;
-        avoidLayoutScheduled = true;
-        // Text size changes request a layout pass. A short deferred pass lets the runnable
-        // use the new measured block bounds without running a per-frame polling loop.
-        clockPanel.postDelayed(avoidLayoutRunnable, 16L);
-    }
-
-    private void applyAvoidingClockLayout(int anchorTarget) {
-        if (rootContainer == null || clockPanel == null
-                || rootContainer.getWidth() <= 0 || rootContainer.getHeight() <= 0) {
-            return;
-        }
-
-        int orderIndex = 0;
-        if (isVisibleClockBlock(anchorTarget)) {
-            avoidLayoutOrder[orderIndex++] = anchorTarget;
-        }
-        for (int target = SCALE_TARGET_TIME; target <= SCALE_TARGET_WEATHER; target++) {
-            if (target != anchorTarget && isVisibleClockBlock(target)) {
-                avoidLayoutOrder[orderIndex++] = target;
-            }
-        }
-        if (orderIndex < 2) return;
-
-        for (int pass = 0; pass < 6; pass++) {
-            boolean moved = false;
-            for (int first = 0; first < orderIndex - 1; first++) {
-                int fixedTarget = avoidLayoutOrder[first];
-                fillAvoidRect(fixedTarget);
-                RectF fixedRect = avoidRectForTarget(fixedTarget);
-                for (int second = first + 1; second < orderIndex; second++) {
-                    int movingTarget = avoidLayoutOrder[second];
-                    fillAvoidRect(movingTarget);
-                    RectF movingRect = avoidRectForTarget(movingTarget);
-                    if (!rectanglesOverlap(fixedRect, movingRect)) continue;
-                    if (moveClockBlockAway(fixedTarget, movingTarget)) {
-                        moved = true;
-                    }
-                }
-            }
-            if (!moved) break;
-        }
-    }
-
-    private boolean isVisibleClockBlock(int target) {
-        AccessibleFrameLayout block = blockForTarget(target);
-        return block != null && block.getVisibility() == View.VISIBLE
-                && block.getWidth() > 0 && block.getHeight() > 0;
-    }
-
-    private RectF avoidRectForTarget(int target) {
-        if (target == SCALE_TARGET_TIME) return avoidTimeRect;
-        if (target == SCALE_TARGET_DATE) return avoidDateRect;
-        return avoidWeatherRect;
-    }
-
-    private void fillAvoidRect(int target) {
-        AccessibleFrameLayout block = blockForTarget(target);
-        RectF rect = avoidRectForTarget(target);
-        if (block == null) {
-            rect.setEmpty();
-            return;
-        }
-        rect.set(getBlockBaseX(target), getBlockBaseY(target),
-                getBlockBaseX(target) + block.getWidth(),
-                getBlockBaseY(target) + block.getHeight());
-    }
-
-    private boolean rectanglesOverlap(RectF first, RectF second) {
-        return first.left < second.right && first.right > second.left
-                && first.top < second.bottom && first.bottom > second.top;
-    }
-
-    private boolean moveClockBlockAway(int fixedTarget, int movingTarget) {
-        RectF fixedRect = avoidRectForTarget(fixedTarget);
-        RectF movingRect = avoidRectForTarget(movingTarget);
-        float overlapX = Math.min(fixedRect.right, movingRect.right)
-                - Math.max(fixedRect.left, movingRect.left);
-        float overlapY = Math.min(fixedRect.bottom, movingRect.bottom)
-                - Math.max(fixedRect.top, movingRect.top);
-        if (overlapX <= 0.0f || overlapY <= 0.0f) return false;
-
-        float gap = dp(4);
-        boolean horizontalFirst = overlapX <= overlapY;
-        if (tryMoveClockBlock(movingTarget, fixedTarget, horizontalFirst,
-                overlapX, overlapY, gap)) {
-            return true;
-        }
-        return tryMoveClockBlock(movingTarget, fixedTarget, !horizontalFirst,
-                overlapX, overlapY, gap);
-    }
-
-    private boolean tryMoveClockBlock(int movingTarget, int fixedTarget, boolean horizontal,
-                                      float overlapX, float overlapY, float gap) {
-        RectF fixedRect = avoidRectForTarget(fixedTarget);
-        RectF movingRect = avoidRectForTarget(movingTarget);
-        float originalLeft = getBlockBaseX(movingTarget);
-        float originalTop = getBlockBaseY(movingTarget);
-        float firstDirection = horizontal
-                ? (movingRect.centerX() >= fixedRect.centerX() ? 1.0f : -1.0f)
-                : (movingRect.centerY() >= fixedRect.centerY() ? 1.0f : -1.0f);
-        if (tryMoveClockBlockDirection(movingTarget, fixedTarget, horizontal,
-                overlapX, overlapY, gap, firstDirection)) {
-            return true;
-        }
-        setBlockBasePosition(movingTarget, originalLeft, originalTop);
-        applyBlockTranslation(movingTarget);
-        if (tryMoveClockBlockDirection(movingTarget, fixedTarget, horizontal,
-                overlapX, overlapY, gap, -firstDirection)) {
-            return true;
-        }
-        setBlockBasePosition(movingTarget, originalLeft, originalTop);
-        applyBlockTranslation(movingTarget);
-        return false;
-    }
-
-    private boolean tryMoveClockBlockDirection(int movingTarget, int fixedTarget,
-                                               boolean horizontal, float overlapX,
-                                               float overlapY, float gap, float direction) {
-        float targetLeft = getBlockBaseX(movingTarget);
-        float targetTop = getBlockBaseY(movingTarget);
-        if (horizontal) {
-            targetLeft += direction * (overlapX + gap);
-        } else {
-            targetTop += direction * (overlapY + gap);
-        }
-        clampAndApplyBlockTranslation(movingTarget, targetLeft, targetTop);
-        fillAvoidRect(movingTarget);
-        return !rectanglesOverlap(avoidRectForTarget(fixedTarget),
-                avoidRectForTarget(movingTarget));
+        applyClockComponentSizes(timeScaleFactor, dateScaleFactor, weatherScaleFactor);
     }
 
     /** Relayouts independently sized text instead of scaling it inside stale view bounds. */
@@ -2351,9 +2214,10 @@ public final class PhotoClockActivity extends Activity {
         if (prefs != null) {
             SharedPreferences.Editor editor = prefs.edit()
                     .putFloat(orientationKey(CLOCK_SCALE_FACTOR), clockScaleFactor)
-                    .putInt(CLOCK_SIZE_MODE, clockSizeMode)
-                    .putBoolean(CLOCK_SIZES_LINKED,
-                            ClockSizeModePolicy.usesLinkedScale(clockSizeMode))
+                    .putInt(CLOCK_LAYOUT_MODE, clockLayoutMode)
+                    .putInt(CLOCK_ORIGINAL_SCALE_MODE, originalScaleMode)
+                    .putInt(CLOCK_SIZE_MODE, legacySizeMode())
+                    .putBoolean(CLOCK_SIZES_LINKED, isLinkedOriginalLayout())
                     .putFloat(orientationKey(CLOCK_TIME_SCALE_FACTOR), timeScaleFactor)
                     .putFloat(orientationKey(CLOCK_DATE_SCALE_FACTOR), dateScaleFactor)
                     .putFloat(orientationKey(CLOCK_WEATHER_SCALE_FACTOR), weatherScaleFactor);
@@ -2374,8 +2238,12 @@ public final class PhotoClockActivity extends Activity {
 
     private int findScaleTarget(float x, float y) {
         if (isPointInView(x, y, timeBlock)) return SCALE_TARGET_TIME;
+        if (isPointInView(x, y, compactWeatherRow)
+                || isPointInView(x, y, weatherRow)
+                || isPointInView(x, y, weatherBlock)) {
+            return SCALE_TARGET_WEATHER;
+        }
         if (isPointInView(x, y, dateBlock)) return SCALE_TARGET_DATE;
-        if (isPointInView(x, y, weatherBlock)) return SCALE_TARGET_WEATHER;
         return SCALE_TARGET_NONE;
     }
 
@@ -2384,7 +2252,7 @@ public final class PhotoClockActivity extends Activity {
             @Override
             public boolean onScale(ScaleGestureDetector detector) {
                 float factor = detector.getScaleFactor();
-                if (ClockSizeModePolicy.usesLinkedScale(clockSizeMode)) {
+                if (isLinkedOriginalLayout()) {
                     clockScaleFactor = clampClockScale(clockScaleFactor * factor);
                     timeScaleFactor = clockScaleFactor;
                     dateScaleFactor = clockScaleFactor;
@@ -2403,7 +2271,7 @@ public final class PhotoClockActivity extends Activity {
             @Override
             public boolean onScaleBegin(ScaleGestureDetector detector) {
                 if (pomodoroModeLayoutActive) return false;
-                if (clockSizeMode == CLOCK_SIZE_MODE_AVOID) {
+                if (!isLinkedOriginalLayout()) {
                     activeScaleTarget = findScaleTarget(
                             detector.getFocusX(), detector.getFocusY());
                     if (activeScaleTarget == SCALE_TARGET_NONE) return false;
@@ -2415,9 +2283,6 @@ public final class PhotoClockActivity extends Activity {
             @Override
             public void onScaleEnd(ScaleGestureDetector detector) {
                 isScalingClock = false;
-                if (clockSizeMode == CLOCK_SIZE_MODE_AVOID) {
-                    scheduleAvoidingClockLayout();
-                }
                 saveClockScaleFactor();
                 activeScaleTarget = SCALE_TARGET_NONE;
             }
@@ -2438,7 +2303,7 @@ public final class PhotoClockActivity extends Activity {
                 if (!isScalingClock && !pomodoroModeLayoutActive) {
                     isDraggingClock = true;
                     activeClockBlock = view;
-                    if (clockSizeMode == CLOCK_SIZE_MODE_GROUP) {
+                    if (legacyClockPanelActive) {
                         startLegacyClockDrag();
                     } else {
                         clockStartBlockX = getBlockBaseX(target);
@@ -2479,7 +2344,7 @@ public final class PhotoClockActivity extends Activity {
                         touchDownRawX = event.getRawX();
                         touchDownRawY = event.getRawY();
                         activeClockBlock = view;
-                        if (clockSizeMode == CLOCK_SIZE_MODE_GROUP) {
+                        if (legacyClockPanelActive) {
                             legacyClockStartTranslationX = legacyClockTranslationX;
                             legacyClockStartTranslationY = legacyClockTranslationY;
                         } else {
@@ -2492,7 +2357,7 @@ public final class PhotoClockActivity extends Activity {
                         if (isDraggingClock && activeClockBlock == view) {
                             float deltaX = event.getRawX() - touchDownRawX;
                             float deltaY = event.getRawY() - touchDownRawY;
-                            if (clockSizeMode == CLOCK_SIZE_MODE_GROUP) {
+                            if (legacyClockPanelActive) {
                                 clampAndApplyLegacyTranslation(
                                         legacyClockStartTranslationX + deltaX,
                                         legacyClockStartTranslationY + deltaY);
@@ -2527,16 +2392,13 @@ public final class PhotoClockActivity extends Activity {
     }
 
     private void finishClockDrag(View view, int target, boolean save) {
-        if (clockSizeMode == CLOCK_SIZE_MODE_GROUP) {
+        if (legacyClockPanelActive) {
             if (legacyClockPanel != null) legacyClockPanel.setAlpha(1.0f);
         } else if (view != null) {
             view.setAlpha(1.0f);
         }
         if (save) {
-            if (clockSizeMode == CLOCK_SIZE_MODE_AVOID) {
-                avoidLayoutAnchorTarget = target;
-                scheduleAvoidingClockLayout();
-            } else if (clockSizeMode == CLOCK_SIZE_MODE_GROUP) {
+            if (legacyClockPanelActive) {
                 saveLegacyClockPosition();
             } else {
                 saveClockPosition(target);
@@ -2873,7 +2735,9 @@ public final class PhotoClockActivity extends Activity {
     public static void resetClockLayoutPreferences(SharedPreferences.Editor editor) {
         if (editor == null) return;
         editor.putInt(CLOCK_LAYOUT_VERSION_KEY, CLOCK_LAYOUT_VERSION)
-                .putInt(CLOCK_SIZE_MODE, CLOCK_SIZE_MODE_OVERLAP)
+                .putInt(CLOCK_LAYOUT_MODE, CLOCK_LAYOUT_MODE_ORIGINAL)
+                .putInt(CLOCK_ORIGINAL_SCALE_MODE, CLOCK_ORIGINAL_SCALE_LINKED)
+                .putInt(CLOCK_SIZE_MODE, CLOCK_SIZE_MODE_GROUP)
                 .putBoolean(CLOCK_SIZES_LINKED, true)
                 .remove(CLOCK_GROUP_PIVOT_X_RATIO + "_portrait")
                 .remove(CLOCK_GROUP_PIVOT_Y_RATIO + "_portrait")

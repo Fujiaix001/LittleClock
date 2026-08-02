@@ -32,6 +32,7 @@ import android.view.WindowInsets;
 import android.view.WindowManager;
 import android.widget.ArrayAdapter;
 import android.widget.AbsListView;
+import android.widget.AdapterView;
 import android.widget.Button;
 import android.widget.CheckBox;
 import android.widget.EditText;
@@ -117,7 +118,8 @@ public final class SettingsActivity extends Activity {
     private int selectedInterval;
     private boolean clockTimeEnabled = true;
     private boolean clockDateEnabled = true;
-    private int clockSizeMode = PhotoClockActivity.CLOCK_SIZE_MODE_OVERLAP;
+    private int clockLayoutMode = PhotoClockActivity.CLOCK_LAYOUT_MODE_ORIGINAL;
+    private int originalScaleMode = PhotoClockActivity.CLOCK_ORIGINAL_SCALE_LINKED;
     private boolean clockBgEnabled;
     private int selectedFontStyle;
     private String selectedFontId;
@@ -194,7 +196,8 @@ public final class SettingsActivity extends Activity {
     private Spinner weatherFontSpinner;
     private Spinner transitionSpinner;
     private Spinner displayModeSpinner;
-    private Spinner clockSizeModeSpinner;
+    private Spinner clockLayoutModeSpinner;
+    private Spinner originalScaleModeSpinner;
     private final ExecutorService networkExecutor = Executors.newSingleThreadExecutor();
 
     private float displayDensity;
@@ -227,14 +230,26 @@ public final class SettingsActivity extends Activity {
                 prefs.getInt(PHOTO_INTERVAL_SECONDS, DEFAULT_INTERVAL_SECONDS));
         clockTimeEnabled = prefs.getBoolean(CLOCK_TIME_ENABLED, true);
         clockDateEnabled = prefs.getBoolean(CLOCK_DATE_ENABLED, true);
-        if (prefs.contains(PhotoClockActivity.CLOCK_SIZE_MODE)) {
-            clockSizeMode = ClockSizeModePolicy.normalize(prefs.getInt(
+        if (prefs.contains(PhotoClockActivity.CLOCK_LAYOUT_MODE)) {
+            clockLayoutMode = ClockLayoutPolicy.normalizeLayout(prefs.getInt(
+                    PhotoClockActivity.CLOCK_LAYOUT_MODE,
+                    PhotoClockActivity.CLOCK_LAYOUT_MODE_ORIGINAL));
+            originalScaleMode = ClockLayoutPolicy.normalizeOriginalScale(prefs.getInt(
+                    PhotoClockActivity.CLOCK_ORIGINAL_SCALE_MODE,
+                    PhotoClockActivity.CLOCK_ORIGINAL_SCALE_LINKED));
+        } else if (prefs.contains(PhotoClockActivity.CLOCK_SIZE_MODE)) {
+            int legacySizeMode = ClockSizeModePolicy.normalize(prefs.getInt(
                     PhotoClockActivity.CLOCK_SIZE_MODE,
                     PhotoClockActivity.CLOCK_SIZE_MODE_OVERLAP));
+            clockLayoutMode = ClockLayoutPolicy.layoutFromLegacySizeMode(legacySizeMode);
+            originalScaleMode = ClockLayoutPolicy.originalScaleFromLegacySizeMode(legacySizeMode);
         } else {
-            clockSizeMode = ClockSizeModePolicy.fromLegacyLinked(
-                    prefs.getBoolean(PhotoClockActivity.CLOCK_SIZES_LINKED,
-                            prefs.getBoolean(PhotoClockActivity.LEGACY_BIND_SCALE, true)));
+            boolean legacyLinked = prefs.getBoolean(PhotoClockActivity.CLOCK_SIZES_LINKED,
+                    prefs.getBoolean(PhotoClockActivity.LEGACY_BIND_SCALE, true));
+            clockLayoutMode = PhotoClockActivity.CLOCK_LAYOUT_MODE_ORIGINAL;
+            originalScaleMode = legacyLinked
+                    ? PhotoClockActivity.CLOCK_ORIGINAL_SCALE_LINKED
+                    : PhotoClockActivity.CLOCK_ORIGINAL_SCALE_AVOID;
         }
         clockBgEnabled = prefs.getBoolean(CLOCK_BACKGROUND_ENABLED, false);
         selectedFontStyle = prefs.getInt(CLOCK_FONT_STYLE, 0);
@@ -744,15 +759,36 @@ public final class SettingsActivity extends Activity {
         clockDateCheck = checkBox("顯示日期", clockDateEnabled);
         mainSection.addView(clockDateCheck);
 
-        clockSizeModeSpinner = addSpinner(
+        clockLayoutModeSpinner = addSpinner(
                 mainSection,
-                "大小變化方式",
+                "排版方式",
                 new String[] {
-                        "固定位置（可重疊）",
-                        "自動避讓（原始效果）",
-                        "整體放大（單一面板、一起移動）"
+                        "原始排版（綁定）",
+                        "自由排版（自行調整）"
                 },
-                clockSizeMode);
+                clockLayoutMode);
+
+        originalScaleModeSpinner = addSpinner(
+                mainSection,
+                "原始排版縮放效果",
+                new String[] {
+                        "整體綁定",
+                        "自動避讓（原始效果）"
+                },
+                originalScaleMode);
+        clockLayoutModeSpinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+            @Override
+            public void onItemSelected(AdapterView<?> parent, View view,
+                                       int position, long id) {
+                updateOriginalScaleModeAvailability();
+            }
+
+            @Override
+            public void onNothingSelected(AdapterView<?> parent) {
+                updateOriginalScaleModeAvailability();
+            }
+        });
+        updateOriginalScaleModeAvailability();
 
         clockBgCheck = checkBox("時間底板", clockBgEnabled);
         mainSection.addView(clockBgCheck);
@@ -769,8 +805,10 @@ public final class SettingsActivity extends Activity {
                             @Override
                             public void onClick(DialogInterface dialog, int which) {
                                 resetClockLayoutRequested = true;
-                                clockSizeModeSpinner.setSelection(
-                                        PhotoClockActivity.CLOCK_SIZE_MODE_OVERLAP);
+                                clockLayoutModeSpinner.setSelection(
+                                        PhotoClockActivity.CLOCK_LAYOUT_MODE_ORIGINAL);
+                                originalScaleModeSpinner.setSelection(
+                                        PhotoClockActivity.CLOCK_ORIGINAL_SCALE_LINKED);
                                 Toast.makeText(SettingsActivity.this,
                                         "已標記恢復，按下儲存後套用", Toast.LENGTH_SHORT).show();
                             }
@@ -1638,6 +1676,14 @@ public final class SettingsActivity extends Activity {
         }
     }
 
+    private void updateOriginalScaleModeAvailability() {
+        if (clockLayoutModeSpinner == null || originalScaleModeSpinner == null) return;
+        boolean original = clockLayoutModeSpinner.getSelectedItemPosition()
+                == PhotoClockActivity.CLOCK_LAYOUT_MODE_ORIGINAL;
+        originalScaleModeSpinner.setEnabled(original);
+        originalScaleModeSpinner.setAlpha(original ? 1.0f : 0.45f);
+    }
+
     private void saveSettings() {
         int fontIndex = Math.max(0, Math.min(
                 fontOptions.size() - 1, fontSpinner.getSelectedItemPosition()));
@@ -1650,8 +1696,12 @@ public final class SettingsActivity extends Activity {
         selectedWeatherFontId = fontOptions.get(weatherFontIndex).id;
         selectedTransition = Math.max(0, Math.min(5, transitionSpinner.getSelectedItemPosition()));
         selectedDisplayMode = Math.max(0, Math.min(2, displayModeSpinner.getSelectedItemPosition()));
-        clockSizeMode = ClockSizeModePolicy.normalize(
-                clockSizeModeSpinner.getSelectedItemPosition());
+        clockLayoutMode = ClockLayoutPolicy.normalizeLayout(
+                clockLayoutModeSpinner.getSelectedItemPosition());
+        originalScaleMode = ClockLayoutPolicy.normalizeOriginalScale(
+                originalScaleModeSpinner.getSelectedItemPosition());
+        int legacySizeMode = ClockLayoutPolicy.legacySizeMode(
+                clockLayoutMode, originalScaleMode);
         if (weatherEnabledCheck.isChecked()
                 && (Double.isNaN(weatherLatitude) || Double.isNaN(weatherLongitude))) {
             Toast.makeText(this, "請先選擇天氣地點", Toast.LENGTH_SHORT).show();
@@ -1662,9 +1712,11 @@ public final class SettingsActivity extends Activity {
                 .putInt(PHOTO_INTERVAL_SECONDS, selectedInterval)
                 .putBoolean(CLOCK_TIME_ENABLED, clockTimeCheck.isChecked())
                 .putBoolean(CLOCK_DATE_ENABLED, clockDateCheck.isChecked())
-                .putInt(PhotoClockActivity.CLOCK_SIZE_MODE, clockSizeMode)
+                .putInt(PhotoClockActivity.CLOCK_LAYOUT_MODE, clockLayoutMode)
+                .putInt(PhotoClockActivity.CLOCK_ORIGINAL_SCALE_MODE, originalScaleMode)
+                .putInt(PhotoClockActivity.CLOCK_SIZE_MODE, legacySizeMode)
                 .putBoolean(PhotoClockActivity.CLOCK_SIZES_LINKED,
-                        ClockSizeModePolicy.usesLinkedScale(clockSizeMode))
+                        ClockLayoutPolicy.isLinkedOriginal(clockLayoutMode, originalScaleMode))
                 .putBoolean(CLOCK_BACKGROUND_ENABLED, clockBgCheck.isChecked())
                 .putString(CLOCK_FONT_ID, selectedFontId)
                 .putString(DATE_FONT_ID, selectedDateFontId)
