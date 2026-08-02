@@ -133,6 +133,8 @@ public final class PhotoClockActivity extends Activity {
     private static final int MAX_PHOTO_DEPTH = 12;
     private static final long IMMERSIVE_TIMEOUT_MS = 5000L;
     private static final long PHOTO_ACTION_LONG_PRESS_MS = 900L;
+    private static final int MANUAL_REFRESH_PULL_DISTANCE_DP = 72;
+    private static final long MANUAL_REFRESH_MIN_INTERVAL_MS = 30000L;
     private static final long BURN_IN_INTERVAL_MS = 180000L;
     private static final long MEDIA_REFRESH_DELAY_MS = 2000L;
     private static final long WEATHER_FRESH_NORMAL_MS = 60L * 60L * 1000L;
@@ -262,7 +264,14 @@ public final class PhotoClockActivity extends Activity {
     private double weatherLatitude = Double.NaN;
     private double weatherLongitude = Double.NaN;
     private boolean weatherFetchInFlight;
+    private WeatherRefreshCallback pendingWeatherRefreshCallback;
     private long weatherLastAttemptAt;
+    private long lastManualRefreshAt;
+    private boolean manualRefreshArmed;
+    private boolean manualRefreshTriggered;
+    private boolean manualRefreshFeedbackVisible;
+    private float manualRefreshDownX;
+    private float manualRefreshDownY;
     private final Set<String> favoritePhotos = new HashSet<String>();
     private final Set<String> hiddenPhotos = new HashSet<String>();
 
@@ -308,12 +317,20 @@ public final class PhotoClockActivity extends Activity {
     private boolean photoActionLongPressPending;
     private float photoActionDownX;
     private float photoActionDownY;
+    private final Runnable hideManualRefreshStatusRunnable = new Runnable() {
+        @Override
+        public void run() {
+            if (!manualRefreshFeedbackVisible) return;
+            manualRefreshFeedbackVisible = false;
+            if (photoStatus != null) photoStatus.setVisibility(View.GONE);
+        }
+    };
     private final Runnable photoActionLongPressRunnable = new Runnable() {
         @Override
         public void run() {
             if (!photoActionLongPressPending || pomodoroModeLayoutActive || photoLoading) return;
             photoActionLongPressPending = false;
-            showPhotoActions();
+            manualRefreshArmed = true;
         }
     };
     private final Random random = new Random();
@@ -349,6 +366,10 @@ public final class PhotoClockActivity extends Activity {
 
     private interface PhotoDiscovery {
         void onPhotoDiscovered(PhotoSource source);
+    }
+
+    private interface WeatherRefreshCallback {
+        void onComplete(boolean success);
     }
 
     private static final class AccessibleFrameLayout extends FrameLayout {
@@ -636,6 +657,8 @@ public final class PhotoClockActivity extends Activity {
     @Override
     protected void onPause() {
         cancelPhotoActionLongPress();
+        photoHandler.removeCallbacks(hideManualRefreshStatusRunnable);
+        manualRefreshFeedbackVisible = false;
         if (currentPhotoSource != null) {
             prefs.edit().putString(LAST_PHOTO_KEY, currentPhotoSource.key()).apply();
         }
@@ -762,21 +785,65 @@ public final class PhotoClockActivity extends Activity {
         photoGestureDetector.setIsLongpressEnabled(false);
     }
 
-    private void handlePhotoActionLongPress(MotionEvent event) {
-        if (event == null) return;
+    private boolean handlePhotoActionLongPress(MotionEvent event) {
+        if (event == null) return false;
         int action = event.getActionMasked();
         if (action == MotionEvent.ACTION_DOWN) {
-            if (!isTouchOnClock(event) && !pomodoroModeLayoutActive && !photoLoading) {
+            manualRefreshArmed = false;
+            manualRefreshTriggered = false;
+            if (canStartBackgroundGesture(event)) {
                 photoActionDownX = event.getRawX();
                 photoActionDownY = event.getRawY();
+                manualRefreshDownX = photoActionDownX;
+                manualRefreshDownY = photoActionDownY;
                 photoActionLongPressPending = true;
                 photoHandler.removeCallbacks(photoActionLongPressRunnable);
                 photoHandler.postDelayed(photoActionLongPressRunnable, PHOTO_ACTION_LONG_PRESS_MS);
             }
-            return;
+            return false;
         }
 
-        if (!photoActionLongPressPending) return;
+        if (manualRefreshTriggered) {
+            if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
+                manualRefreshTriggered = false;
+            }
+            return true;
+        }
+
+        if (manualRefreshArmed) {
+            if (action == MotionEvent.ACTION_MOVE) {
+                if (event.getPointerCount() > 1) {
+                    cancelPhotoActionLongPress();
+                    return false;
+                }
+                float deltaX = event.getRawX() - manualRefreshDownX;
+                float deltaY = event.getRawY() - manualRefreshDownY;
+                float pullDistance = dp(MANUAL_REFRESH_PULL_DISTANCE_DP);
+                if (deltaY >= pullDistance && deltaY > Math.abs(deltaX) * 1.2f) {
+                    triggerManualRefresh();
+                    return true;
+                }
+                int touchSlop = ViewConfiguration.get(this).getScaledTouchSlop();
+                if (deltaY < -touchSlop
+                        || (Math.abs(deltaX) > touchSlop
+                        && Math.abs(deltaX) > Math.abs(deltaY) * 1.2f)) {
+                    cancelPhotoActionLongPress();
+                }
+                return false;
+            }
+            if (action == MotionEvent.ACTION_UP) {
+                manualRefreshArmed = false;
+                showPhotoActions();
+                return true;
+            }
+            if (action == MotionEvent.ACTION_CANCEL || event.getPointerCount() > 1) {
+                cancelPhotoActionLongPress();
+                return false;
+            }
+            return false;
+        }
+
+        if (!photoActionLongPressPending) return false;
         if (action == MotionEvent.ACTION_MOVE) {
             int touchSlop = ViewConfiguration.get(this).getScaledTouchSlop();
             if (Math.abs(event.getRawX() - photoActionDownX) > touchSlop
@@ -788,10 +855,13 @@ public final class PhotoClockActivity extends Activity {
                 || event.getPointerCount() > 1) {
             cancelPhotoActionLongPress();
         }
+        return false;
     }
 
     private void cancelPhotoActionLongPress() {
         photoActionLongPressPending = false;
+        manualRefreshArmed = false;
+        manualRefreshTriggered = false;
         photoHandler.removeCallbacks(photoActionLongPressRunnable);
     }
 
@@ -805,7 +875,7 @@ public final class PhotoClockActivity extends Activity {
             showFocusReminder();
             return true;
         }
-        handlePhotoActionLongPress(event);
+        if (handlePhotoActionLongPress(event)) return true;
         if (scaleGestureDetector != null) {
             scaleGestureDetector.onTouchEvent(event);
         }
@@ -814,6 +884,59 @@ public final class PhotoClockActivity extends Activity {
             photoGestureDetector.onTouchEvent(event);
         }
         return super.dispatchTouchEvent(event);
+    }
+
+    private boolean canStartBackgroundGesture(MotionEvent event) {
+        return !isTouchOnClock(event)
+                && !isTouchOnView(settingsButton, event)
+                && !isTouchOnView(pomodoroButton, event)
+                && !isTouchOnView(pomodoroFocusPanel, event)
+                && !isTouchOnView(focusReminderOverlay, event)
+                && !pomodoroModeLayoutActive
+                && !photoLoading;
+    }
+
+    private void triggerManualRefresh() {
+        manualRefreshTriggered = true;
+        manualRefreshArmed = false;
+        photoActionLongPressPending = false;
+        photoHandler.removeCallbacks(photoActionLongPressRunnable);
+
+        updatePhotoClock();
+        long now = SystemClock.elapsedRealtime();
+        if (lastManualRefreshAt > 0L
+                && now - lastManualRefreshAt < MANUAL_REFRESH_MIN_INTERVAL_MS) {
+            showManualRefreshStatus("請稍候再更新", SECONDARY, 1200L);
+            return;
+        }
+        lastManualRefreshAt = now;
+        showManualRefreshStatus("正在更新…", SECONDARY, 0L);
+
+        if (!weatherEnabled || Double.isNaN(weatherLatitude)
+                || Double.isNaN(weatherLongitude)) {
+            showManualRefreshStatus("畫面已更新", SECONDARY, 1200L);
+            return;
+        }
+        requestWeatherRefresh(true, new WeatherRefreshCallback() {
+            @Override
+            public void onComplete(boolean success) {
+                if (!activityResumed) return;
+                showManualRefreshStatus(
+                        success ? "已更新" : "天氣更新失敗，保留舊資料",
+                        success ? PRIMARY : WARNING,
+                        1400L);
+            }
+        });
+    }
+
+    private void showManualRefreshStatus(String message, int color, long hideAfterMs) {
+        if (photoStatus == null) return;
+        photoHandler.removeCallbacks(hideManualRefreshStatusRunnable);
+        manualRefreshFeedbackVisible = true;
+        showPhotoStatus(message, color);
+        if (hideAfterMs > 0L) {
+            photoHandler.postDelayed(hideManualRefreshStatusRunnable, hideAfterMs);
+        }
     }
 
     private boolean shouldShowFocusReminder(MotionEvent event) {
@@ -3428,21 +3551,38 @@ public final class PhotoClockActivity extends Activity {
     }
 
     private void requestWeatherRefresh() {
-        if (!activityResumed || !weatherEnabled || weatherFetchInFlight) return;
-        if (Double.isNaN(weatherLatitude) || Double.isNaN(weatherLongitude)) return;
+        requestWeatherRefresh(false, null);
+    }
+
+    private void requestWeatherRefresh(boolean force, WeatherRefreshCallback callback) {
+        if (force) {
+            photoHandler.removeCallbacks(weatherRefreshRunnable);
+        }
+        if (!activityResumed || !weatherEnabled
+                || Double.isNaN(weatherLatitude) || Double.isNaN(weatherLongitude)) {
+            if (callback != null) callback.onComplete(false);
+            return;
+        }
+        if (weatherFetchInFlight) {
+            if (callback != null) pendingWeatherRefreshCallback = callback;
+            return;
+        }
         if (!WeatherClient.isWifiConnected(this)) {
             weatherLastAttemptAt = System.currentTimeMillis();
             photoHandler.postDelayed(weatherRefreshRunnable,
                     lowPowerMode ? WEATHER_FRESH_LOW_POWER_MS : WEATHER_FRESH_NORMAL_MS);
+            if (callback != null) callback.onComplete(false);
             return;
         }
         weatherFetchInFlight = true;
         weatherLastAttemptAt = System.currentTimeMillis();
+        pendingWeatherRefreshCallback = callback;
         final double latitude = weatherLatitude;
         final double longitude = weatherLongitude;
         weatherExecutor.execute(new Runnable() {
             @Override
             public void run() {
+                boolean success = false;
                 try {
                     final WeatherClient.CurrentWeather weather =
                             WeatherClient.fetchCurrent(latitude, longitude);
@@ -3452,14 +3592,24 @@ public final class PhotoClockActivity extends Activity {
                             .putBoolean(SettingsActivity.WEATHER_IS_DAY, weather.daytime)
                             .putLong(SettingsActivity.WEATHER_UPDATED_AT, System.currentTimeMillis())
                             .apply();
+                    success = true;
                 } catch (Exception ignored) {
                     // 保留快取；舊裝置 TLS 或暫時斷線時不打擾相簿播放。
                 }
+                final boolean requestSucceeded = success;
                 runOnUiThread(new Runnable() {
                     @Override
                     public void run() {
                         weatherFetchInFlight = false;
-                        if (activityResumed) scheduleWeatherRefresh();
+                        WeatherRefreshCallback callbackToRun = pendingWeatherRefreshCallback;
+                        pendingWeatherRefreshCallback = null;
+                        if (activityResumed) {
+                            updateWeatherFromCache();
+                            scheduleWeatherRefresh();
+                        }
+                        if (callbackToRun != null) {
+                            callbackToRun.onComplete(requestSucceeded);
+                        }
                     }
                 });
             }
