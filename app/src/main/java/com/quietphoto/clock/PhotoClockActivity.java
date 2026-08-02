@@ -143,7 +143,6 @@ public final class PhotoClockActivity extends Activity {
     private static final long SAF_RESCAN_LOW_POWER_MS = 2L * 60L * 60L * 1000L;
     private static final int WALLPAPER_PACK_VERSION = 4;
     private static final String WALLPAPER_PACK_VERSION_KEY = "wallpaper_pack_version";
-    private static final String GESTURE_HINT_SEEN_KEY = "gesture_hint_seen_v1";
 
     private FrameLayout rootContainer;
     private FrameLayout polaroidContainer;
@@ -179,7 +178,6 @@ public final class PhotoClockActivity extends Activity {
     private FrameLayout focusReminderOverlay;
     private ImageView focusReminderImage;
     private TextView focusReminderMessage;
-    private TextView gestureHint;
     private AlertDialog pomodoroDialog;
     private TextView pomodoroDialogStatus;
     private Button pomodoroStartPauseButton;
@@ -387,13 +385,6 @@ public final class PhotoClockActivity extends Activity {
                 loadNextPhoto();
             }
             schedulePhotoTicker();
-        }
-    };
-
-    private final Runnable hideGestureHintRunnable = new Runnable() {
-        @Override
-        public void run() {
-            if (gestureHint != null) gestureHint.setVisibility(View.GONE);
         }
     };
 
@@ -632,7 +623,6 @@ public final class PhotoClockActivity extends Activity {
         scheduleBurnIn();
         scheduleWeatherRefresh();
         scheduleSafCatalogRefresh();
-        showGestureHintIfNeeded();
         updateAlarmIndicator();
         updatePomodoroDisplay();
         rootContainer.post(new Runnable() {
@@ -651,7 +641,6 @@ public final class PhotoClockActivity extends Activity {
         }
         activityResumed = false;
         photoHandler.removeCallbacks(hideImmersiveRunnable);
-        photoHandler.removeCallbacks(hideGestureHintRunnable);
         photoHandler.removeCallbacks(burnInRunnable);
         photoHandler.removeCallbacks(mediaRefreshRunnable);
         photoHandler.removeCallbacks(weatherRefreshRunnable);
@@ -671,7 +660,6 @@ public final class PhotoClockActivity extends Activity {
     protected void onDestroy() {
         cancelPhotoActionLongPress();
         photoHandler.removeCallbacks(hideImmersiveRunnable);
-        photoHandler.removeCallbacks(hideGestureHintRunnable);
         photoHandler.removeCallbacks(burnInRunnable);
         photoHandler.removeCallbacks(mediaRefreshRunnable);
         photoHandler.removeCallbacks(weatherRefreshRunnable);
@@ -860,8 +848,6 @@ public final class PhotoClockActivity extends Activity {
             }
         }
         photoHandler.removeCallbacks(hideFocusReminderRunnable);
-        photoHandler.removeCallbacks(hideGestureHintRunnable);
-        if (gestureHint != null) gestureHint.setVisibility(View.GONE);
         focusReminderOverlay.setVisibility(View.VISIBLE);
         vibrateFocusReminder();
         photoHandler.postDelayed(hideFocusReminderRunnable, FOCUS_REMINDER_DURATION_MS);
@@ -1836,32 +1822,8 @@ public final class PhotoClockActivity extends Activity {
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 FrameLayout.LayoutParams.MATCH_PARENT));
 
-        gestureHint = new TextView(this);
-        gestureHint.setText("點一下開啟功能　左右滑換照片　長按管理");
-        gestureHint.setTextSize(13);
-        gestureHint.setTextColor(PRIMARY);
-        gestureHint.setGravity(Gravity.CENTER);
-        gestureHint.setPadding(dp(14), dp(8), dp(14), dp(8));
-        gestureHint.setBackground(rounded(Color.argb(178, 10, 16, 22)));
-        gestureHint.setVisibility(View.GONE);
-        FrameLayout.LayoutParams hintParams = new FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.WRAP_CONTENT,
-                FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
-        hintParams.setMargins(dp(14), 0, dp(14), dp(24));
-        rootContainer.addView(gestureHint, hintParams);
-
         updatePhotoClock();
         return rootContainer;
-    }
-
-    private void showGestureHintIfNeeded() {
-        if (gestureHint == null || prefs.getBoolean(GESTURE_HINT_SEEN_KEY, false)) return;
-        PomodoroHelper.Snapshot snapshot = PomodoroHelper.getSnapshot(this);
-        if (snapshot.hasSession) return;
-        prefs.edit().putBoolean(GESTURE_HINT_SEEN_KEY, true).apply();
-        gestureHint.setVisibility(View.VISIBLE);
-        photoHandler.removeCallbacks(hideGestureHintRunnable);
-        photoHandler.postDelayed(hideGestureHintRunnable, 6500L);
     }
 
     private void showPomodoroDialog() {
@@ -1930,7 +1892,7 @@ public final class PhotoClockActivity extends Activity {
                 refreshPomodoroDialog();
             }
         });
-        Button end = button("結束番茄", Color.rgb(104, 50, 56));
+        Button end = button("結束", Color.rgb(104, 50, 56));
         end.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
