@@ -8,7 +8,12 @@ final class PhotoPanPolicy {
     }
 
     static boolean shouldRender(float progress, long lastFrameAt, long now) {
+        return shouldRender(progress, lastFrameAt, now, FRAME_INTERVAL_MS);
+    }
+
+    static boolean shouldRender(
+            float progress, long lastFrameAt, long now, long frameIntervalMs) {
         return progress >= 1.0f || lastFrameAt == 0L
-                || now - lastFrameAt >= FRAME_INTERVAL_MS;
+                || now - lastFrameAt >= frameIntervalMs;
     }
 }

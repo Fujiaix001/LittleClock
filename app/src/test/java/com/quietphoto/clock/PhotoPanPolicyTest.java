@@ -23,4 +23,10 @@ public final class PhotoPanPolicyTest {
         assertFalse(PhotoPanPolicy.shouldRender(0.5f, 100L, 166L));
         assertTrue(PhotoPanPolicy.shouldRender(0.5f, 100L, 167L));
     }
+
+    @Test
+    public void showcaseCanRenderAtThirtyFpsTarget() {
+        assertFalse(PhotoPanPolicy.shouldRender(0.5f, 100L, 133L, 34L));
+        assertTrue(PhotoPanPolicy.shouldRender(0.5f, 100L, 134L, 34L));
+    }
 }

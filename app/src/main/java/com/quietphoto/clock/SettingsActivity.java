@@ -73,6 +73,7 @@ public final class SettingsActivity extends Activity {
     public static final String NIGHT_END_HOUR = "night_end_hour";
     public static final String TRANSITION_TYPE = "transition_type";
     public static final String LOW_POWER_MODE = "low_power_mode";
+    public static final String PERFORMANCE_MODE = "performance_mode";
     public static final String PHOTO_DISPLAY_MODE = "photo_display_mode";
     public static final String BURN_IN_ENABLED = "burn_in_enabled";
     public static final String AUTO_BRIGHTNESS_ENABLED = "auto_brightness_enabled";
@@ -135,7 +136,7 @@ public final class SettingsActivity extends Activity {
     private boolean adaptiveColorEnabled;
     private boolean polaroidFrameEnabled;
     private boolean smartFocusEnabled;
-    private boolean lowPowerMode;
+    private int performanceMode;
     private boolean burnInEnabled;
     private boolean autoBrightnessEnabled;
     private boolean favoritesOnly;
@@ -175,7 +176,6 @@ public final class SettingsActivity extends Activity {
     private CheckBox adaptiveColorCheck;
     private CheckBox polaroidFrameCheck;
     private CheckBox smartFocusCheck;
-    private CheckBox lowPowerCheck;
     private CheckBox burnInCheck;
     private CheckBox autoBrightnessCheck;
     private CheckBox favoritesOnlyCheck;
@@ -196,6 +196,7 @@ public final class SettingsActivity extends Activity {
     private Spinner weatherFontSpinner;
     private Spinner transitionSpinner;
     private Spinner displayModeSpinner;
+    private Spinner performanceModeSpinner;
     private Spinner clockLayoutModeSpinner;
     private Spinner originalScaleModeSpinner;
     private final ExecutorService networkExecutor = Executors.newSingleThreadExecutor();
@@ -269,7 +270,10 @@ public final class SettingsActivity extends Activity {
         adaptiveColorEnabled = prefs.getBoolean(ADAPTIVE_COLOR_ENABLED, true);
         polaroidFrameEnabled = prefs.getBoolean(POLAROID_FRAME_ENABLED, false);
         smartFocusEnabled = prefs.getBoolean(SMART_FOCUS_ENABLED, true);
-        lowPowerMode = prefs.getBoolean(LOW_POWER_MODE, true);
+        performanceMode = prefs.contains(PERFORMANCE_MODE)
+                ? PerformanceModePolicy.normalize(prefs.getInt(
+                        PERFORMANCE_MODE, PerformanceModePolicy.ECO))
+                : PerformanceModePolicy.fromLegacy(prefs.getBoolean(LOW_POWER_MODE, true));
         burnInEnabled = prefs.getBoolean(BURN_IN_ENABLED, true);
         autoBrightnessEnabled = prefs.getBoolean(AUTO_BRIGHTNESS_ENABLED, false);
         favoritesOnly = prefs.getBoolean(FAVORITES_ONLY, false);
@@ -645,8 +649,11 @@ public final class SettingsActivity extends Activity {
             }
         });
 
-        lowPowerCheck = checkBox("低耗電模式（建議）", lowPowerMode);
-        mainSection.addView(lowPowerCheck);
+        performanceModeSpinner = addSpinner(
+                mainSection,
+                "效能模式",
+                new String[] { "低耗電（建議）", "標準", "展演（高耗能）" },
+                PerformanceModePolicy.normalize(performanceMode));
 
         addDivider(mainSection);
         addInlineSectionHeader(mainSection, "番茄鐘", "POMODORO");
@@ -1726,7 +1733,10 @@ public final class SettingsActivity extends Activity {
                 .putInt(NIGHT_END_HOUR, nightEndHour)
                 .putInt(TRANSITION_TYPE, selectedTransition)
                 .putInt(PHOTO_DISPLAY_MODE, selectedDisplayMode)
-                .putBoolean(LOW_POWER_MODE, lowPowerCheck.isChecked())
+                .putInt(PERFORMANCE_MODE, PerformanceModePolicy.normalize(
+                        performanceModeSpinner.getSelectedItemPosition()))
+                .putBoolean(LOW_POWER_MODE, performanceModeSpinner.getSelectedItemPosition()
+                        == PerformanceModePolicy.ECO)
                 .putBoolean(ADAPTIVE_COLOR_ENABLED, adaptiveColorCheck.isChecked())
                 .putBoolean(POLAROID_FRAME_ENABLED, polaroidFrameCheck.isChecked())
                 .putBoolean(SMART_FOCUS_ENABLED, smartFocusCheck.isChecked())

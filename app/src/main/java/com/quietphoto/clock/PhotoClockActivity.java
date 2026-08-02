@@ -7,6 +7,7 @@ import android.app.AlertDialog;
 import android.content.Context;
 import android.content.DialogInterface;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.content.res.Configuration;
@@ -26,6 +27,7 @@ import android.hardware.SensorEventListener;
 import android.hardware.SensorManager;
 import android.net.Uri;
 import android.os.Build;
+import android.os.BatteryManager;
 import android.os.Bundle;
 import android.os.Environment;
 import android.os.Handler;
@@ -141,6 +143,8 @@ public final class PhotoClockActivity extends Activity {
     private static final long WEATHER_FRESH_LOW_POWER_MS = 120L * 60L * 1000L;
     private static final long WEATHER_MAX_AGE_MS = 6L * 60L * 60L * 1000L;
     private static final long FOCUS_REMINDER_DURATION_MS = 3000L;
+    private static final long PERFORMANCE_GUARD_INTERVAL_MS = 60000L;
+    private static final long PERFORMANCE_MEMORY_PRESSURE_MS = 5L * 60L * 1000L;
     private static final long SAF_RESCAN_NORMAL_MS = 60L * 60L * 1000L;
     private static final long SAF_RESCAN_LOW_POWER_MS = 2L * 60L * 60L * 1000L;
     private static final int WALLPAPER_PACK_VERSION = 4;
@@ -150,6 +154,7 @@ public final class PhotoClockActivity extends Activity {
     private FrameLayout polaroidContainer;
     private ImageView backgroundImage;
     private ImageView photoImage;
+    private View showcaseColorOverlay;
     private TextView photoStatus;
     private AccessibleFrameLayout clockPanel;
     /** The legacy .13-style single surface used by the linked group mode. */
@@ -251,7 +256,10 @@ public final class PhotoClockActivity extends Activity {
     private boolean adaptiveColorEnabled = true;
     private boolean polaroidFrameEnabled = false;
     private boolean smartFocusEnabled = true;
-    private boolean lowPowerMode = true;
+    private int selectedPerformanceMode = PerformanceModePolicy.ECO;
+    private int effectivePerformanceMode = PerformanceModePolicy.ECO;
+    private float lastBatteryTemperatureC = Float.NaN;
+    private long performanceMemoryPressureUntil;
     private boolean burnInEnabled = true;
     private boolean autoBrightnessEnabled;
     private boolean favoritesOnly;
@@ -457,6 +465,15 @@ public final class PhotoClockActivity extends Activity {
         }
     };
 
+    private final Runnable performanceGuardRunnable = new Runnable() {
+        @Override
+        public void run() {
+            if (!activityResumed || isFinishing() || isDestroyed()) return;
+            updatePerformanceGuard();
+            schedulePerformanceGuard();
+        }
+    };
+
     private final Runnable mediaRefreshRunnable = new Runnable() {
         @Override
         public void run() {
@@ -636,6 +653,7 @@ public final class PhotoClockActivity extends Activity {
         activityResumed = true;
         hideSystemUI();
         loadSettingsConfig();
+        schedulePerformanceGuard();
         startPhotoSlideshow();
         if (hasPhotoReadAccess()) {
             registerMediaObserver();
@@ -665,6 +683,7 @@ public final class PhotoClockActivity extends Activity {
         activityResumed = false;
         photoHandler.removeCallbacks(hideImmersiveRunnable);
         photoHandler.removeCallbacks(burnInRunnable);
+        photoHandler.removeCallbacks(performanceGuardRunnable);
         photoHandler.removeCallbacks(mediaRefreshRunnable);
         photoHandler.removeCallbacks(weatherRefreshRunnable);
         photoHandler.removeCallbacks(safCatalogRefreshRunnable);
@@ -684,6 +703,7 @@ public final class PhotoClockActivity extends Activity {
         cancelPhotoActionLongPress();
         photoHandler.removeCallbacks(hideImmersiveRunnable);
         photoHandler.removeCallbacks(burnInRunnable);
+        photoHandler.removeCallbacks(performanceGuardRunnable);
         photoHandler.removeCallbacks(mediaRefreshRunnable);
         photoHandler.removeCallbacks(weatherRefreshRunnable);
         photoHandler.removeCallbacks(safCatalogRefreshRunnable);
@@ -696,6 +716,25 @@ public final class PhotoClockActivity extends Activity {
         photoDecodeExecutor.shutdownNow();
         weatherExecutor.shutdownNow();
         super.onDestroy();
+    }
+
+    @Override
+    public void onTrimMemory(int level) {
+        super.onTrimMemory(level);
+        if (level >= android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW) {
+            performanceMemoryPressureUntil = SystemClock.elapsedRealtime()
+                    + PERFORMANCE_MEMORY_PRESSURE_MS;
+            updatePerformanceGuard();
+        }
+    }
+
+    @Override
+    public void onLowMemory() {
+        super.onLowMemory();
+        performanceMemoryPressureUntil = Long.MAX_VALUE;
+        if (selectedPerformanceMode == PerformanceModePolicy.SHOWCASE) {
+            applyEffectivePerformanceMode(PerformanceModePolicy.ECO, true);
+        }
     }
 
     @Override
@@ -1280,7 +1319,13 @@ public final class PhotoClockActivity extends Activity {
         adaptiveColorEnabled = prefs.getBoolean(SettingsActivity.ADAPTIVE_COLOR_ENABLED, true);
         polaroidFrameEnabled = prefs.getBoolean(SettingsActivity.POLAROID_FRAME_ENABLED, false);
         smartFocusEnabled = prefs.getBoolean(SettingsActivity.SMART_FOCUS_ENABLED, true);
-        lowPowerMode = prefs.getBoolean(SettingsActivity.LOW_POWER_MODE, true);
+        selectedPerformanceMode = prefs.contains(SettingsActivity.PERFORMANCE_MODE)
+                ? PerformanceModePolicy.normalize(prefs.getInt(
+                        SettingsActivity.PERFORMANCE_MODE, PerformanceModePolicy.ECO))
+                : PerformanceModePolicy.fromLegacy(prefs.getBoolean(
+                        SettingsActivity.LOW_POWER_MODE, true));
+        effectivePerformanceMode = selectedPerformanceMode;
+        performanceMemoryPressureUntil = 0L;
         burnInEnabled = prefs.getBoolean(SettingsActivity.BURN_IN_ENABLED, true);
         autoBrightnessEnabled = prefs.getBoolean(SettingsActivity.AUTO_BRIGHTNESS_ENABLED, false);
         favoritesOnly = prefs.getBoolean(SettingsActivity.FAVORITES_ONLY, false);
@@ -1305,15 +1350,89 @@ public final class PhotoClockActivity extends Activity {
         if (savedHidden != null) hiddenPhotos.addAll(savedHidden);
 
         applyPolaroidStyle();
+        updateShowcaseColorOverlay();
         updateClockStyle();
         applyClockScale();
+    }
+
+    private boolean isLowPowerModeActive() {
+        return PerformanceModePolicy.isEco(effectivePerformanceMode);
+    }
+
+    private boolean isShowcaseModeActive() {
+        return PerformanceModePolicy.isShowcase(effectivePerformanceMode);
+    }
+
+    private void schedulePerformanceGuard() {
+        photoHandler.removeCallbacks(performanceGuardRunnable);
+        if (!activityResumed || selectedPerformanceMode != PerformanceModePolicy.SHOWCASE) {
+            return;
+        }
+        updatePerformanceGuard();
+        photoHandler.postDelayed(performanceGuardRunnable, PERFORMANCE_GUARD_INTERVAL_MS);
+    }
+
+    private void updatePerformanceGuard() {
+        if (selectedPerformanceMode != PerformanceModePolicy.SHOWCASE) {
+            applyEffectivePerformanceMode(selectedPerformanceMode, false);
+            return;
+        }
+        lastBatteryTemperatureC = readBatteryTemperature();
+        boolean memoryPressure = SystemClock.elapsedRealtime() < performanceMemoryPressureUntil;
+        int resolved = PerformanceModePolicy.resolveEffectiveMode(
+                selectedPerformanceMode,
+                effectivePerformanceMode,
+                lastBatteryTemperatureC,
+                memoryPressure);
+        applyEffectivePerformanceMode(resolved, true);
+    }
+
+    private float readBatteryTemperature() {
+        try {
+            Intent battery = registerReceiver(null,
+                    new IntentFilter(Intent.ACTION_BATTERY_CHANGED));
+            if (battery != null && battery.hasExtra(BatteryManager.EXTRA_TEMPERATURE)) {
+                return battery.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, 0) / 10.0f;
+            }
+        } catch (RuntimeException ignored) {
+            // Some old vendor builds do not expose the sticky battery broadcast.
+        }
+        return Float.NaN;
+    }
+
+    private void applyEffectivePerformanceMode(int mode, boolean notifyUser) {
+        int normalized = PerformanceModePolicy.normalize(mode);
+        if (effectivePerformanceMode == normalized) return;
+        int previous = effectivePerformanceMode;
+        effectivePerformanceMode = normalized;
+        if (rootContainer == null || !activityResumed) return;
+
+        applyPolaroidStyle();
+        updateShowcaseColorOverlay();
+        updateClockStyle();
+        if (photoBitmap != null) {
+            applyPhotoPresentation(photoBitmap);
+            if (effectiveDisplayMode() == 0 && !isNightSleepActive) {
+                startPhotoPan();
+            }
+        } else {
+            stopPhotoPan();
+        }
+        if (notifyUser && selectedPerformanceMode == PerformanceModePolicy.SHOWCASE
+                && previous == PerformanceModePolicy.SHOWCASE
+                && normalized != PerformanceModePolicy.SHOWCASE) {
+            String message = normalized == PerformanceModePolicy.ECO
+                    ? "裝置溫度較高，已降低效果"
+                    : "裝置資源緊張，已降低效果";
+            Toast.makeText(this, message, Toast.LENGTH_SHORT).show();
+        }
     }
 
     private void applyPolaroidStyle() {
         if (polaroidContainer == null) {
             return;
         }
-        if (polaroidFrameEnabled && !lowPowerMode) {
+        if (polaroidFrameEnabled && !isLowPowerModeActive()) {
             GradientDrawable polaroidBg = new GradientDrawable();
             polaroidBg.setColor(Color.rgb(250, 248, 245));
             polaroidBg.setCornerRadius(dp(8));
@@ -1323,6 +1442,29 @@ public final class PhotoClockActivity extends Activity {
             polaroidContainer.setBackground(null);
             polaroidContainer.setPadding(0, 0, 0, 0);
         }
+    }
+
+    private void updateShowcaseColorOverlay() {
+        if (showcaseColorOverlay == null) return;
+        showcaseColorOverlay.animate().cancel();
+        if (!isShowcaseModeActive() || !adaptiveColorEnabled) {
+            showcaseColorOverlay.setAlpha(0.0f);
+            showcaseColorOverlay.setBackground(null);
+            showcaseColorOverlay.setVisibility(View.GONE);
+            return;
+        }
+        int color = currentDominantColor;
+        GradientDrawable gradient = new GradientDrawable(
+                GradientDrawable.Orientation.BOTTOM_TOP,
+                new int[] {
+                        Color.argb(112, Color.red(color), Color.green(color), Color.blue(color)),
+                        Color.argb(0, Color.red(color), Color.green(color), Color.blue(color))
+                });
+        showcaseColorOverlay.setBackground(gradient);
+        showcaseColorOverlay.setVisibility(View.VISIBLE);
+        showcaseColorOverlay.setAlpha(0.0f);
+        showcaseColorOverlay.animate().alpha(0.16f).setDuration(1600L)
+                .setInterpolator(smoothInterpolator).start();
     }
 
     private void checkNightSleepMode() {
@@ -1663,6 +1805,14 @@ public final class PhotoClockActivity extends Activity {
                 FrameLayout.LayoutParams.MATCH_PARENT));
 
         rootContainer.addView(polaroidContainer, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT));
+
+        showcaseColorOverlay = new View(this);
+        showcaseColorOverlay.setClickable(false);
+        showcaseColorOverlay.setFocusable(false);
+        showcaseColorOverlay.setVisibility(View.GONE);
+        rootContainer.addView(showcaseColorOverlay, new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 FrameLayout.LayoutParams.MATCH_PARENT));
 
@@ -3018,7 +3168,7 @@ public final class PhotoClockActivity extends Activity {
         photoHandler.removeCallbacks(safCatalogRefreshRunnable);
         if (!activityResumed || !hasTreePhotoSource()) return;
         photoHandler.postDelayed(safCatalogRefreshRunnable,
-                lowPowerMode ? SAF_RESCAN_LOW_POWER_MS : SAF_RESCAN_NORMAL_MS);
+                isLowPowerModeActive() ? SAF_RESCAN_LOW_POWER_MS : SAF_RESCAN_NORMAL_MS);
     }
 
     private int resolvePhotoFileLimit() {
@@ -3070,6 +3220,11 @@ public final class PhotoClockActivity extends Activity {
     private void stopPhotoSlideshow() {
         photoHandler.removeCallbacks(photoTicker);
         stopPhotoPan();
+        if (showcaseColorOverlay != null) {
+            showcaseColorOverlay.animate().cancel();
+            showcaseColorOverlay.setAlpha(0.0f);
+            showcaseColorOverlay.setVisibility(View.GONE);
+        }
         photoGeneration++;
         photoLoading = false;
         photoScanInProgress = false;
@@ -3147,7 +3302,7 @@ public final class PhotoClockActivity extends Activity {
 
     private void startPhotoPan() {
         stopPhotoPan();
-        if (lowPowerMode || effectiveDisplayMode() != 0) {
+        if (isLowPowerModeActive() || effectiveDisplayMode() != 0) {
             return;
         }
         if (photoImage == null || photoBitmap == null
@@ -3169,7 +3324,8 @@ public final class PhotoClockActivity extends Activity {
                 float progress = (Float) animation.getAnimatedValue();
                 long now = SystemClock.uptimeMillis();
                 if (!PhotoPanPolicy.shouldRender(
-                        progress, lastPhotoPanFrameAt, now)) {
+                        progress, lastPhotoPanFrameAt, now,
+                        PerformanceModePolicy.frameIntervalMs(effectivePerformanceMode))) {
                     return;
                 }
                 lastPhotoPanFrameAt = now;
@@ -3204,21 +3360,25 @@ public final class PhotoClockActivity extends Activity {
             return;
         }
 
+        float smoothProgress = progress * progress * (3.0f - 2.0f * progress);
+        float travelFraction = isShowcaseModeActive() ? 0.28f : PHOTO_PAN_TRAVEL_FRACTION;
+        float zoomProgress = photoPanReverse ? smoothProgress : 1.0f - smoothProgress;
+        float showcaseZoom = isShowcaseModeActive()
+                ? 1.02f + 0.04f * zoomProgress : 1.0f;
         float scale = Math.max(
                 (float) viewWidth / bitmapWidth,
-                (float) viewHeight / bitmapHeight);
+                (float) viewHeight / bitmapHeight) * showcaseZoom;
         float scaledWidth = bitmapWidth * scale;
         float scaledHeight = bitmapHeight * scale;
         float overflowX = Math.max(0.0f, scaledWidth - viewWidth);
         float overflowY = Math.max(0.0f, scaledHeight - viewHeight);
-        float smoothProgress = progress * progress * (3.0f - 2.0f * progress);
-        float startPosition = (1.0f - PHOTO_PAN_TRAVEL_FRACTION) / 2.0f;
+        float startPosition = (1.0f - travelFraction) / 2.0f;
         float travelProgress = photoPanReverse ? 1.0f - smoothProgress : smoothProgress;
 
         float targetPosX = isSmartFocusActive() ? focalX : 0.5f;
         float targetPosY = isSmartFocusActive() ? focalY : 0.5f;
 
-        float position = startPosition + PHOTO_PAN_TRAVEL_FRACTION * travelProgress;
+        float position = startPosition + travelFraction * travelProgress;
 
         float translateX;
         float translateY;
@@ -3237,15 +3397,15 @@ public final class PhotoClockActivity extends Activity {
     }
 
     private boolean isAdaptiveColorActive() {
-        return adaptiveColorEnabled && !lowPowerMode;
+        return adaptiveColorEnabled && !isLowPowerModeActive();
     }
 
     private boolean isSmartFocusActive() {
-        return smartFocusEnabled && !lowPowerMode && effectiveDisplayMode() == 0;
+        return smartFocusEnabled && !isLowPowerModeActive() && effectiveDisplayMode() == 0;
     }
 
     private int effectiveDisplayMode() {
-        return lowPowerMode && photoDisplayMode == 2 ? 1 : photoDisplayMode;
+        return isLowPowerModeActive() && photoDisplayMode == 2 ? 1 : photoDisplayMode;
     }
 
     private void applyPhotoPresentation(Bitmap bitmap) {
@@ -3546,7 +3706,8 @@ public final class PhotoClockActivity extends Activity {
         long basis = Math.max(lastSuccess, weatherLastAttemptAt);
         long age = basis <= 0L ? Long.MAX_VALUE
                 : Math.max(0L, System.currentTimeMillis() - basis);
-        long interval = lowPowerMode ? WEATHER_FRESH_LOW_POWER_MS : WEATHER_FRESH_NORMAL_MS;
+        long interval = isLowPowerModeActive()
+                ? WEATHER_FRESH_LOW_POWER_MS : WEATHER_FRESH_NORMAL_MS;
         photoHandler.postDelayed(weatherRefreshRunnable, Math.max(0L, interval - age));
     }
 
@@ -3570,7 +3731,8 @@ public final class PhotoClockActivity extends Activity {
         if (!WeatherClient.isWifiConnected(this)) {
             weatherLastAttemptAt = System.currentTimeMillis();
             photoHandler.postDelayed(weatherRefreshRunnable,
-                    lowPowerMode ? WEATHER_FRESH_LOW_POWER_MS : WEATHER_FRESH_NORMAL_MS);
+                    isLowPowerModeActive()
+                            ? WEATHER_FRESH_LOW_POWER_MS : WEATHER_FRESH_NORMAL_MS);
             if (callback != null) callback.onComplete(false);
             return;
         }
@@ -4110,9 +4272,9 @@ public final class PhotoClockActivity extends Activity {
 
         BitmapFactory.Options options = new BitmapFactory.Options();
         options.inSampleSize = sample;
-        options.inPreferredConfig = lowPowerMode
+        options.inPreferredConfig = isLowPowerModeActive()
                 ? Bitmap.Config.RGB_565 : Bitmap.Config.ARGB_8888;
-        options.inDither = lowPowerMode;
+        options.inDither = isLowPowerModeActive();
         Bitmap bmp = null;
         try {
             bmp = decodeBitmap(source, options);
@@ -4205,6 +4367,7 @@ public final class PhotoClockActivity extends Activity {
 
     private void displayPhoto(final Bitmap bitmap) {
         photoStatus.setVisibility(View.GONE);
+        updateShowcaseColorOverlay();
         if (isNightSleepActive) {
             if (photoBitmap != null && photoBitmap != bitmap && !photoBitmap.isRecycled()) {
                 safeRecycle(photoBitmap);
@@ -4279,41 +4442,47 @@ public final class PhotoClockActivity extends Activity {
         photoImage.setRotationY(0.0f);
     }
 
+    private android.view.ViewPropertyAnimator photoTransitionAnimator() {
+        android.view.ViewPropertyAnimator animator = photoImage.animate();
+        if (isShowcaseModeActive()) animator.withLayer();
+        return animator;
+    }
+
     private void animateOut(int type, Runnable endAction) {
         switch (type) {
             case 1:
-                photoImage.animate().translationX(-photoImage.getWidth() * 0.35f)
+                photoTransitionAnimator().translationX(-photoImage.getWidth() * 0.35f)
                         .alpha(0.0f).setDuration(1400)
                         .setInterpolator(smoothInterpolator)
                         .withEndAction(endAction).start();
                 break;
             case 2:
-                photoImage.animate().translationY(-photoImage.getHeight() * 0.35f)
+                photoTransitionAnimator().translationY(-photoImage.getHeight() * 0.35f)
                         .alpha(0.0f).setDuration(1400)
                         .setInterpolator(smoothInterpolator)
                         .withEndAction(endAction).start();
                 break;
             case 3:
-                photoImage.animate().scaleX(0.92f).scaleY(0.92f)
+                photoTransitionAnimator().scaleX(0.92f).scaleY(0.92f)
                         .alpha(0.0f).setDuration(1300)
                         .setInterpolator(smoothInterpolator)
                         .withEndAction(endAction).start();
                 break;
             case 4:
-                photoImage.animate().rotationY(90f)
+                photoTransitionAnimator().rotationY(90f)
                         .alpha(0.0f).setDuration(1100)
                         .setInterpolator(smoothInterpolator)
                         .withEndAction(endAction).start();
                 break;
             case 5:
-                photoImage.animate().rotation(-5f)
+                photoTransitionAnimator().rotation(-5f)
                         .alpha(0.0f).setDuration(1400)
                         .setInterpolator(smoothInterpolator)
                         .withEndAction(endAction).start();
                 break;
             case 0:
             default:
-                photoImage.animate().alpha(0.0f).setDuration(1500)
+                photoTransitionAnimator().alpha(0.0f).setDuration(1500)
                         .setInterpolator(smoothInterpolator)
                         .withEndAction(endAction).start();
                 break;
@@ -4325,38 +4494,38 @@ public final class PhotoClockActivity extends Activity {
             case 1:
                 photoImage.setTranslationX(photoImage.getWidth() * 0.35f);
                 photoImage.setAlpha(0.0f);
-                photoImage.animate().translationX(0.0f).alpha(1.0f).setDuration(2000)
+                photoTransitionAnimator().translationX(0.0f).alpha(1.0f).setDuration(2000)
                         .setInterpolator(smoothInterpolator).start();
                 break;
             case 2:
                 photoImage.setTranslationY(photoImage.getHeight() * 0.35f);
                 photoImage.setAlpha(0.0f);
-                photoImage.animate().translationY(0.0f).alpha(1.0f).setDuration(2000)
+                photoTransitionAnimator().translationY(0.0f).alpha(1.0f).setDuration(2000)
                         .setInterpolator(smoothInterpolator).start();
                 break;
             case 3:
                 photoImage.setScaleX(1.06f);
                 photoImage.setScaleY(1.06f);
                 photoImage.setAlpha(0.0f);
-                photoImage.animate().scaleX(1.0f).scaleY(1.0f).alpha(1.0f).setDuration(2000)
+                photoTransitionAnimator().scaleX(1.0f).scaleY(1.0f).alpha(1.0f).setDuration(2000)
                         .setInterpolator(smoothInterpolator).start();
                 break;
             case 4:
                 photoImage.setRotationY(-90f);
                 photoImage.setAlpha(0.0f);
-                photoImage.animate().rotationY(0.0f).alpha(1.0f).setDuration(1600)
+                photoTransitionAnimator().rotationY(0.0f).alpha(1.0f).setDuration(1600)
                         .setInterpolator(smoothInterpolator).start();
                 break;
             case 5:
                 photoImage.setRotation(5f);
                 photoImage.setAlpha(0.0f);
-                photoImage.animate().rotation(0.0f).alpha(1.0f).setDuration(2000)
+                photoTransitionAnimator().rotation(0.0f).alpha(1.0f).setDuration(2000)
                         .setInterpolator(smoothInterpolator).start();
                 break;
             case 0:
             default:
                 photoImage.setAlpha(0.0f);
-                photoImage.animate().alpha(1.0f).setDuration(2200)
+                photoTransitionAnimator().alpha(1.0f).setDuration(2200)
                         .setInterpolator(smoothInterpolator).start();
                 break;
         }
