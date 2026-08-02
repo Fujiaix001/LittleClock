@@ -299,7 +299,6 @@ public final class PhotoClockActivity extends Activity {
     private float focalX = 0.5f;
     private float focalY = 0.5f;
 
-    private long photoPanStartedAt;
     private long nextPhotoAt;
 
     private boolean isDraggingClock;
@@ -2743,20 +2742,6 @@ public final class PhotoClockActivity extends Activity {
         legacyClockPanel.setTranslationY(legacyClockTranslationY + burnInOffsetY);
     }
 
-    private float getClockGroupStartX(int target, float timeX, float dateX,
-                                      float weatherX) {
-        if (target == SCALE_TARGET_TIME) return timeX;
-        if (target == SCALE_TARGET_DATE) return dateX;
-        return weatherX;
-    }
-
-    private float getClockGroupStartY(int target, float timeY, float dateY,
-                                      float weatherY) {
-        if (target == SCALE_TARGET_TIME) return timeY;
-        if (target == SCALE_TARGET_DATE) return dateY;
-        return weatherY;
-    }
-
     private float getClockInteractionScale() {
         return 1.0f;
     }
@@ -2840,19 +2825,6 @@ public final class PhotoClockActivity extends Activity {
 
         SharedPreferences.Editor editor = prefs.edit();
         writeClockPosition(editor, target, rootW, rootH);
-        editor.apply();
-    }
-
-    private void saveAllClockPositions() {
-        if (rootContainer == null || prefs == null) return;
-        int rootW = rootContainer.getWidth();
-        int rootH = rootContainer.getHeight();
-        if (rootW <= 0 || rootH <= 0) return;
-
-        SharedPreferences.Editor editor = prefs.edit();
-        for (int target = SCALE_TARGET_TIME; target <= SCALE_TARGET_WEATHER; target++) {
-            writeClockPosition(editor, target, rootW, rootH);
-        }
         editor.apply();
     }
 
@@ -3548,11 +3520,12 @@ public final class PhotoClockActivity extends Activity {
                 photoDate.setText(photoDateFormat.format(nowDate));
             }
         }
-        if (daylightProgressView != null) {
+        if (daylightProgressView != null
+                && daylightProgressView.getVisibility() == View.VISIBLE) {
             daylightProgressView.setNow(nowDate.getTime());
         }
         updateAlarmIndicator();
-        updatePomodoroDisplay();
+        updatePomodoroDisplay(false);
     }
 
     private void checkPomodoroCompletion() {
@@ -3562,11 +3535,16 @@ public final class PhotoClockActivity extends Activity {
             Toast.makeText(this, PomodoroHelper.phaseLabel(transition.finishedPhase)
                     + "結束，下一階段：" + PomodoroHelper.phaseLabel(transition.nextPhase),
                     Toast.LENGTH_LONG).show();
-            updatePomodoroDisplay();
+            updatePomodoroDisplay(false);
         }
     }
 
     private void updatePomodoroDisplay() {
+        updatePomodoroDisplay(true);
+    }
+
+    /** Lets the shared photo ticker refresh the display without scheduling itself twice. */
+    private void updatePomodoroDisplay(boolean rescheduleTicker) {
         if (pomodoroRow == null || pomodoroLabel == null || pomodoroText == null) return;
         PomodoroHelper.Snapshot snapshot = PomodoroHelper.getSnapshot(this);
         if (!snapshot.hasSession) {
@@ -3585,7 +3563,7 @@ public final class PhotoClockActivity extends Activity {
         // 暫停時整個倒數畫面就是「繼續」按鈕；運行中仍讓既有觸控行為處理。
         pomodoroFocusPanel.setClickable(!snapshot.running);
         pomodoroRow.setVisibility(View.VISIBLE);
-        if (activityResumed) schedulePhotoTicker();
+        if (activityResumed && rescheduleTicker) schedulePhotoTicker();
     }
 
     private void applyPomodoroAdvancedDisplay(PomodoroHelper.Snapshot snapshot) {
@@ -3925,7 +3903,6 @@ public final class PhotoClockActivity extends Activity {
                         WeatherRefreshCallback callbackToRun = pendingWeatherRefreshCallback;
                         pendingWeatherRefreshCallback = null;
                         if (activityResumed) {
-                            updateWeatherFromCache();
                             scheduleWeatherRefresh();
                         }
                         if (callbackToRun != null) {

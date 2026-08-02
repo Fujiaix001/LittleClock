@@ -21,9 +21,6 @@ import java.util.List;
 import java.util.Locale;
 import java.util.TimeZone;
 
-import javax.net.ssl.HttpsURLConnection;
-import javax.net.ssl.SSLContext;
-
 public final class WeatherClient {
     private static final int TIMEOUT_MS = 8000;
     private static final int MAX_RESPONSE_BYTES = 128 * 1024;
