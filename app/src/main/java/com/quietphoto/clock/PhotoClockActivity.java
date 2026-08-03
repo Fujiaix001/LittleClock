@@ -45,6 +45,7 @@ import android.view.ViewGroup;
 import android.view.ViewConfiguration;
 import android.view.WindowManager;
 import android.view.animation.AccelerateDecelerateInterpolator;
+import android.view.animation.OvershootInterpolator;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.FrameLayout;
@@ -138,6 +139,7 @@ public final class PhotoClockActivity extends Activity {
     private static final long PHOTO_ACTION_LONG_PRESS_MS = 900L;
     private static final int MANUAL_REFRESH_PULL_DISTANCE_DP = 72;
     private static final long MANUAL_REFRESH_MIN_INTERVAL_MS = 30000L;
+    private static final long MANUAL_REFRESH_BOUNCE_DURATION_MS = 320L;
     private static final long BURN_IN_INTERVAL_MS = 180000L;
     private static final long MEDIA_REFRESH_DELAY_MS = 2000L;
     private static final long WEATHER_FRESH_NORMAL_MS = 60L * 60L * 1000L;
@@ -210,6 +212,8 @@ public final class PhotoClockActivity extends Activity {
     private final Matrix photoMatrix = new Matrix();
     private final Date nowDate = new Date();
     private final AccelerateDecelerateInterpolator smoothInterpolator = new AccelerateDecelerateInterpolator();
+    private final OvershootInterpolator manualRefreshBounceInterpolator =
+            new OvershootInterpolator(1.4f);
     private SharedPreferences prefs;
     private boolean clockTimeEnabled = true;
     private boolean clockDateEnabled = true;
@@ -345,6 +349,7 @@ public final class PhotoClockActivity extends Activity {
         public void run() {
             if (!manualRefreshFeedbackVisible) return;
             manualRefreshFeedbackVisible = false;
+            resetManualRefreshBounce();
             if (photoStatus != null) photoStatus.setVisibility(View.GONE);
         }
     };
@@ -692,6 +697,7 @@ public final class PhotoClockActivity extends Activity {
         cancelPhotoActionLongPress();
         photoHandler.removeCallbacks(hideManualRefreshStatusRunnable);
         manualRefreshFeedbackVisible = false;
+        resetManualRefreshBounce();
         if (currentPhotoSource != null) {
             prefs.edit().putString(LAST_PHOTO_KEY, currentPhotoSource.key()).apply();
         }
@@ -961,16 +967,19 @@ public final class PhotoClockActivity extends Activity {
         if (lastManualRefreshAt > 0L
                 && now - lastManualRefreshAt < MANUAL_REFRESH_MIN_INTERVAL_MS) {
             showManualRefreshStatus("請稍候再更新", SECONDARY, 1200L);
+            playManualRefreshBounce();
             return;
         }
         lastManualRefreshAt = now;
-        showManualRefreshStatus("正在更新…", SECONDARY, 0L);
 
         if (!weatherEnabled || Double.isNaN(weatherLatitude)
                 || Double.isNaN(weatherLongitude)) {
             showManualRefreshStatus("畫面已更新", SECONDARY, 1200L);
+            playManualRefreshBounce();
             return;
         }
+        showManualRefreshStatus("正在更新…", SECONDARY, 0L);
+        playManualRefreshBounce();
         requestWeatherRefresh(true, new WeatherRefreshCallback() {
             @Override
             public void onComplete(boolean success) {
@@ -991,6 +1000,33 @@ public final class PhotoClockActivity extends Activity {
         if (hideAfterMs > 0L) {
             photoHandler.postDelayed(hideManualRefreshStatusRunnable, hideAfterMs);
         }
+    }
+
+    /** One short compositor-friendly animation; no layout pass or persistent animator is used. */
+    private void playManualRefreshBounce() {
+        if (photoStatus == null) return;
+        photoStatus.animate().cancel();
+        photoStatus.setAlpha(0.65f);
+        photoStatus.setScaleX(0.84f);
+        photoStatus.setScaleY(0.84f);
+        photoStatus.setTranslationY(-dp(18));
+        photoStatus.animate()
+                .alpha(1.0f)
+                .scaleX(1.0f)
+                .scaleY(1.0f)
+                .translationY(0.0f)
+                .setDuration(MANUAL_REFRESH_BOUNCE_DURATION_MS)
+                .setInterpolator(manualRefreshBounceInterpolator)
+                .start();
+    }
+
+    private void resetManualRefreshBounce() {
+        if (photoStatus == null) return;
+        photoStatus.animate().cancel();
+        photoStatus.setAlpha(1.0f);
+        photoStatus.setScaleX(1.0f);
+        photoStatus.setScaleY(1.0f);
+        photoStatus.setTranslationY(0.0f);
     }
 
     private boolean shouldShowFocusReminder(MotionEvent event) {
