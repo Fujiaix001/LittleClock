@@ -281,6 +281,8 @@ public final class PhotoClockActivity extends Activity {
     private boolean weatherMinimalLocation;
     private boolean weatherCompactMode = true;
     private boolean weatherExtendedEnabled;
+    private boolean weatherExtendedForecastEnabled = true;
+    private boolean weatherExtendedDaylightEnabled = true;
     private String weatherLocationName = "";
     private String weatherTimezone = "auto";
     private double weatherLatitude = Double.NaN;
@@ -1351,6 +1353,10 @@ public final class PhotoClockActivity extends Activity {
         weatherCompactMode = prefs.getBoolean(SettingsActivity.WEATHER_COMPACT_MODE, true);
         weatherExtendedEnabled = prefs.getBoolean(
                 SettingsActivity.WEATHER_EXTENDED_ENABLED, false);
+        weatherExtendedForecastEnabled = prefs.getBoolean(
+                SettingsActivity.WEATHER_EXTENDED_FORECAST_ENABLED, true);
+        weatherExtendedDaylightEnabled = prefs.getBoolean(
+                SettingsActivity.WEATHER_EXTENDED_DAYLIGHT_ENABLED, true);
         weatherLocationName = prefs.getString(SettingsActivity.WEATHER_LOCATION_NAME, "");
         weatherTimezone = prefs.getString(SettingsActivity.WEATHER_TIMEZONE, "auto");
         weatherLatitude = parseDouble(prefs.getString(SettingsActivity.WEATHER_LATITUDE, null));
@@ -3893,7 +3899,8 @@ public final class PhotoClockActivity extends Activity {
         pendingWeatherRefreshCallback = callback;
         final double latitude = weatherLatitude;
         final double longitude = weatherLongitude;
-        final boolean extendedEnabled = weatherExtendedEnabled;
+        final boolean extendedEnabled = weatherExtendedEnabled
+                && (weatherExtendedForecastEnabled || weatherExtendedDaylightEnabled);
         weatherExecutor.execute(new Runnable() {
             @Override
             public void run() {
@@ -4056,24 +4063,36 @@ public final class PhotoClockActivity extends Activity {
         long age = System.currentTimeMillis() - updatedAt;
         List<WeatherClient.HourlyWeather> hours = decodeExtendedForecast(
                 prefs.getString(SettingsActivity.WEATHER_EXTENDED_FORECAST, ""));
-        if (updatedAt <= 0L || age < 0L || age > WEATHER_MAX_AGE_MS || hours.isEmpty()) {
+        boolean cacheValid = updatedAt > 0L && age >= 0L && age <= WEATHER_MAX_AGE_MS;
+        boolean hasForecast = cacheValid && !hours.isEmpty();
+        long sunriseAtMs = prefs.getLong(SettingsActivity.WEATHER_EXTENDED_SUNRISE_AT, -1L);
+        long sunsetAtMs = prefs.getLong(SettingsActivity.WEATHER_EXTENDED_SUNSET_AT, -1L);
+        boolean hasDaylight = cacheValid && sunriseAtMs > 0L && sunsetAtMs > sunriseAtMs;
+        if ((!weatherExtendedForecastEnabled || !hasForecast)
+                && (!weatherExtendedDaylightEnabled || !hasDaylight)) {
+            weatherForecastText.setVisibility(View.GONE);
+            daylightProgressView.setVisibility(View.GONE);
+            daylightLabel.setVisibility(View.GONE);
             weatherExtendedPanel.setVisibility(View.GONE);
             return;
         }
 
-        StringBuilder forecast = new StringBuilder("未來三小時  ");
-        for (int i = 0; i < hours.size(); i++) {
-            if (i > 0) forecast.append("  ·  ");
-            WeatherClient.HourlyWeather hour = hours.get(i);
-            forecast.append(hour.localTime).append(' ')
-                    .append(hour.temperatureCelsius).append("°/")
-                    .append(hour.precipitationProbability).append('%');
+        if (weatherExtendedForecastEnabled && hasForecast) {
+            StringBuilder forecast = new StringBuilder("未來三小時  ");
+            for (int i = 0; i < hours.size(); i++) {
+                if (i > 0) forecast.append("  ·  ");
+                WeatherClient.HourlyWeather hour = hours.get(i);
+                forecast.append(hour.localTime).append(' ')
+                        .append(hour.temperatureCelsius).append("°/")
+                        .append(hour.precipitationProbability).append('%');
+            }
+            weatherForecastText.setText(forecast.toString());
+            weatherForecastText.setVisibility(View.VISIBLE);
+        } else {
+            weatherForecastText.setVisibility(View.GONE);
         }
-        weatherForecastText.setText(forecast.toString());
 
-        long sunriseAtMs = prefs.getLong(SettingsActivity.WEATHER_EXTENDED_SUNRISE_AT, -1L);
-        long sunsetAtMs = prefs.getLong(SettingsActivity.WEATHER_EXTENDED_SUNSET_AT, -1L);
-        if (sunriseAtMs > 0L && sunsetAtMs > sunriseAtMs) {
+        if (weatherExtendedDaylightEnabled && hasDaylight) {
             daylightProgressView.setTimes(sunriseAtMs, sunsetAtMs);
             daylightProgressView.setNow(System.currentTimeMillis());
             daylightProgressView.setVisibility(View.VISIBLE);
