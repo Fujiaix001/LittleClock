@@ -15,6 +15,7 @@ final class PlaybackNavigator {
     private int deckPosition;
     private int historyPosition = -1;
     private int itemCount;
+    private boolean shuffle = true;
 
     PlaybackNavigator() {
         this(new Random());
@@ -29,6 +30,10 @@ final class PlaybackNavigator {
         history.clear();
         historyPosition = -1;
         refillDeck(NO_ITEM);
+    }
+
+    void setShuffle(boolean enabled) {
+        shuffle = enabled;
     }
 
     void resetAt(int count, int currentIndex) {
@@ -81,9 +86,11 @@ final class PlaybackNavigator {
         for (int i = 0; i < itemCount; i++) {
             deck.add(i);
         }
-        Collections.shuffle(deck, random);
-        if (itemCount > 1 && deck.get(0) == avoidFirst) {
-            Collections.swap(deck, 0, 1);
+        if (shuffle) {
+            Collections.shuffle(deck, random);
+            if (itemCount > 1 && deck.get(0) == avoidFirst) {
+                Collections.swap(deck, 0, 1);
+            }
         }
         deckPosition = 0;
     }

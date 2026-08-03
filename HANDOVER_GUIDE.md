@@ -7,11 +7,20 @@
 ## 📌 1. 專案基本資訊與位置
 
 - **專案名稱**：小時鐘 (LittleClock)
-- **當前版本**：`v4.0.8-test-android4.2-storopia` / `v4.0.8`
-- **專案絕對路徑**：`C:\Users\hsuchungming\Desktop\WorkSpace\LittleClock`
-- **測試包位置**：`C:\Users\hsuchungming\Desktop\WorkSpace\LittleClock\dist\LittleClock-v4.0.8-test-android4.2-storopia.apk`
-- **標準包位置**：`C:\Users\hsuchungming\Desktop\WorkSpace\LittleClock\dist\LittleClock-v4.0.8.apk`
+- **當前版本**：`v4.1.0-test-android4.2-storopia` / `v4.1.0`
+- **專案絕對路徑**：`C:\Users\hsuchungming\Desktop\WorkSpace\LittleClock-photo-pan-frame-throttle`
+- **測試包位置**：`C:\Users\hsuchungming\Desktop\WorkSpace\LittleClock-photo-pan-frame-throttle\dist\LittleClock-v4.1.0-test-android4.2-storopia.apk`
+- **標準包位置**：`C:\Users\hsuchungming\Desktop\WorkSpace\LittleClock-photo-pan-frame-throttle\dist\LittleClock-v4.1.0.apk`
 - **授權狀態**：Storopia 的分發授權尚未確認；包含此字型的 APK 僅供內部測試。
+
+---
+
+## 📱 專案定位與 AI 維護原則
+
+- **老設備優先**：本專案以舊手機、平板、電視盒長時間穩定運作為主要目標；Android 4.2（API 17）是必須持續保留的最低相容版本。
+- **限制先於功能**：新增 API、第三方依賴、背景服務或常駐輪詢前，必須先確認不破壞 API 17、低記憶體與低 CPU 設備的使用情境。
+- **AI 全程維護**：本專案的架構設計、程式修改、測試與文件維護由 AI 完成；每次變更仍應保留可重現的建置、測試與實機驗證紀錄。
+- **效能取向**：優先選擇有界的記憶體配置、單一背景工作、可停止的動畫與低頻排程；避免為了新裝置效果而犧牲老設備的穩定性與續航。
 
 ---
 
@@ -98,5 +107,5 @@ git status
 ## 💬 6. 新對話接續提示 (在新對話直接發送以下文字即可)
 
 ```text
-我們正在維護「小時鐘」(LittleClock) Android 專案，專案路徑為 C:\Users\hsuchungming\Desktop\WorkSpace\LittleClock，當前版本為 v4.0.8-test / v4.0.8，已完成 Git 初始化。請參考該目錄下的 HANDOVER_GUIDE.md 並在開始寫作前先檢查 Git 管理狀態。
+我們正在維護「小時鐘」(LittleClock) Android 專案，專案路徑為 C:\Users\hsuchungming\Desktop\WorkSpace\LittleClock-photo-pan-frame-throttle，當前版本為 v4.1.0-test / v4.1.0，已完成 Git 初始化。請參考該目錄下的 HANDOVER_GUIDE.md 並在開始寫作前先檢查 Git 管理狀態。
 ```

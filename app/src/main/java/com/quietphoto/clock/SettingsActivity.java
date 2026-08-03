@@ -59,6 +59,11 @@ public final class SettingsActivity extends Activity {
     public static final String PREFERENCES = "quietphotoclock";
     public static final String PHOTO_FOLDERS = "photo_folders";
     public static final String PHOTO_INTERVAL_SECONDS = "photo_interval_seconds";
+    public static final String PHOTO_PLAYBACK_ORDER = "photo_playback_order";
+    public static final String CLOCK_SECONDS_MODE = "clock_seconds_mode";
+    public static final String KEEP_SCREEN_MODE = "keep_screen_mode";
+    public static final String LOW_BATTERY_GUARD = "low_battery_guard";
+    public static final String BATTERY_DISPLAY_MODE = "battery_display_mode";
     public static final String CLOCK_X_RATIO = "clock_x_ratio";
     public static final String CLOCK_Y_RATIO = "clock_y_ratio";
     public static final String CLOCK_TIME_ENABLED = "clock_time_enabled";
@@ -126,6 +131,11 @@ public final class SettingsActivity extends Activity {
     private final Set<String> initialFolderSources = new LinkedHashSet<String>();
     private final Set<String> newlyGrantedTreeSources = new LinkedHashSet<String>();
     private int selectedInterval;
+    private int playbackOrder = PlaybackOrderPolicy.RANDOM;
+    private int secondsMode = ClockSecondPolicy.OFF;
+    private int keepScreenMode = PowerStatePolicy.KEEP_AWAKE_ALWAYS;
+    private boolean lowBatteryGuard;
+    private int batteryDisplayMode;
     private boolean clockTimeEnabled = true;
     private boolean clockDateEnabled = true;
     private int clockLayoutMode = PhotoClockActivity.CLOCK_LAYOUT_MODE_ORIGINAL;
@@ -216,6 +226,14 @@ public final class SettingsActivity extends Activity {
     private Spinner performanceModeSpinner;
     private Spinner clockLayoutModeSpinner;
     private Spinner originalScaleModeSpinner;
+    private Spinner playbackOrderSpinner;
+    private Spinner secondsModeSpinner;
+    private Spinner keepScreenModeSpinner;
+    private Spinner batteryDisplayModeSpinner;
+    private CheckBox lowBatteryGuardCheck;
+    private Spinner profileSpinner;
+    private boolean profileSpinnerReady;
+    private String activeProfileId = DisplayProfileStore.DEFAULT;
     private final ExecutorService networkExecutor = Executors.newSingleThreadExecutor();
 
     private float displayDensity;
@@ -244,8 +262,19 @@ public final class SettingsActivity extends Activity {
         currentDirectory = null;
 
         android.content.SharedPreferences prefs = getSharedPreferences(PREFERENCES, MODE_PRIVATE);
+        DisplayProfileStore.ensureInitialized(prefs);
+        activeProfileId = DisplayProfileStore.activeId(prefs);
         selectedInterval = nearestIntervalStep(
                 prefs.getInt(PHOTO_INTERVAL_SECONDS, DEFAULT_INTERVAL_SECONDS));
+        playbackOrder = PlaybackOrderPolicy.normalize(
+                prefs.getInt(PHOTO_PLAYBACK_ORDER, PlaybackOrderPolicy.RANDOM));
+        secondsMode = ClockSecondPolicy.normalize(
+                prefs.getInt(CLOCK_SECONDS_MODE, ClockSecondPolicy.OFF));
+        keepScreenMode = PowerStatePolicy.normalizeKeepAwakeMode(
+                prefs.getInt(KEEP_SCREEN_MODE, PowerStatePolicy.KEEP_AWAKE_ALWAYS));
+        lowBatteryGuard = prefs.getBoolean(LOW_BATTERY_GUARD, false);
+        batteryDisplayMode = Math.max(0, Math.min(2,
+                prefs.getInt(BATTERY_DISPLAY_MODE, 0)));
         clockTimeEnabled = prefs.getBoolean(CLOCK_TIME_ENABLED, true);
         clockDateEnabled = prefs.getBoolean(CLOCK_DATE_ENABLED, true);
         if (prefs.contains(PhotoClockActivity.CLOCK_LAYOUT_MODE)) {
@@ -527,6 +556,50 @@ public final class SettingsActivity extends Activity {
         titleRow.addView(save, saveParams);
         root.addView(titleRow);
 
+        profileSpinner = addSpinner(
+                root,
+                "目前情境",
+                DisplayProfileStore.labels(),
+                DisplayProfileStore.indexOf(activeProfileId));
+        profileSpinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+            @Override
+            public void onItemSelected(AdapterView<?> parent, View view,
+                    int position, long id) {
+                if (!profileSpinnerReady) {
+                    profileSpinnerReady = true;
+                    return;
+                }
+                String[] ids = DisplayProfileStore.ids();
+                if (position < 0 || position >= ids.length) return;
+                String target = ids[position];
+                if (target.equals(activeProfileId)) return;
+                profileSpinner.setSelection(DisplayProfileStore.indexOf(activeProfileId));
+                new AlertDialog.Builder(SettingsActivity.this)
+                        .setTitle("切換情境")
+                        .setMessage("切換後會立即載入此情境；目前尚未套用的設定將捨棄。")
+                        .setNegativeButton("取消", null)
+                        .setPositiveButton("切換", new DialogInterface.OnClickListener() {
+                            @Override
+                            public void onClick(DialogInterface dialog, int which) {
+                                discardPendingTreeGrants();
+                                android.content.SharedPreferences preferences =
+                                        getSharedPreferences(PREFERENCES, MODE_PRIVATE);
+                                DisplayProfileStore.apply(preferences, target);
+                                activeProfileId = target;
+                                settingsSaved = true;
+                                finish();
+                                startActivity(new Intent(SettingsActivity.this,
+                                        SettingsActivity.class));
+                            }
+                        })
+                        .show();
+            }
+
+            @Override
+            public void onNothingSelected(AdapterView<?> parent) {
+            }
+        });
+
         addSectionHeader(root, "顯示與功能", "DISPLAY & TOOLS");
 
         // 常用播放與顯示設定。
@@ -584,6 +657,13 @@ public final class SettingsActivity extends Activity {
                 "相片轉場",
                 new String[] { "淡入", "水平滑動", "垂直滑動", "縮放", "翻轉", "旋轉" },
                 Math.max(0, Math.min(5, selectedTransition)));
+
+        playbackOrderSpinner = addSpinner(
+                mainSection,
+                "播放順序",
+                new String[] { "隨機（每輪不重複）", "檔名 A → Z", "檔名 Z → A",
+                        "最新優先", "最舊優先" },
+                playbackOrder);
 
         fontSpinner = addSpinner(
                 mainSection,
@@ -819,6 +899,27 @@ public final class SettingsActivity extends Activity {
 
         clockDateCheck = checkBox("顯示日期", clockDateEnabled);
         mainSection.addView(clockDateCheck);
+
+        secondsModeSpinner = addSpinner(
+                mainSection,
+                "顯示秒數",
+                new String[] { "不顯示", "充電時顯示", "永遠顯示" },
+                secondsMode);
+
+        batteryDisplayModeSpinner = addSpinner(
+                mainSection,
+                "電量顯示",
+                new String[] { "不顯示", "永遠顯示", "只在未充電時顯示" },
+                batteryDisplayMode);
+
+        keepScreenModeSpinner = addSpinner(
+                mainSection,
+                "保持螢幕亮起",
+                new String[] { "永遠保持亮屏", "只有充電時", "跟隨系統休眠" },
+                keepScreenMode);
+
+        lowBatteryGuardCheck = checkBox("低電量時降低相片耗電", lowBatteryGuard);
+        mainSection.addView(lowBatteryGuardCheck);
 
         clockLayoutModeSpinner = addSpinner(
                 mainSection,
@@ -1757,6 +1858,14 @@ public final class SettingsActivity extends Activity {
         selectedWeatherFontId = fontOptions.get(weatherFontIndex).id;
         selectedTransition = Math.max(0, Math.min(5, transitionSpinner.getSelectedItemPosition()));
         selectedDisplayMode = Math.max(0, Math.min(2, displayModeSpinner.getSelectedItemPosition()));
+        playbackOrder = PlaybackOrderPolicy.normalize(
+                playbackOrderSpinner.getSelectedItemPosition());
+        secondsMode = ClockSecondPolicy.normalize(secondsModeSpinner.getSelectedItemPosition());
+        keepScreenMode = PowerStatePolicy.normalizeKeepAwakeMode(
+                keepScreenModeSpinner.getSelectedItemPosition());
+        batteryDisplayMode = Math.max(0, Math.min(2,
+                batteryDisplayModeSpinner.getSelectedItemPosition()));
+        lowBatteryGuard = lowBatteryGuardCheck.isChecked();
         clockLayoutMode = ClockLayoutPolicy.normalizeLayout(
                 clockLayoutModeSpinner.getSelectedItemPosition());
         originalScaleMode = ClockLayoutPolicy.normalizeOriginalScale(
@@ -1787,6 +1896,11 @@ public final class SettingsActivity extends Activity {
                 .putInt(NIGHT_END_HOUR, nightEndHour)
                 .putInt(TRANSITION_TYPE, selectedTransition)
                 .putInt(PHOTO_DISPLAY_MODE, selectedDisplayMode)
+                .putInt(PHOTO_PLAYBACK_ORDER, playbackOrder)
+                .putInt(CLOCK_SECONDS_MODE, secondsMode)
+                .putInt(KEEP_SCREEN_MODE, keepScreenMode)
+                .putBoolean(LOW_BATTERY_GUARD, lowBatteryGuard)
+                .putInt(BATTERY_DISPLAY_MODE, batteryDisplayMode)
                 .putInt(PERFORMANCE_MODE, PerformanceModePolicy.normalize(
                         performanceModeSpinner.getSelectedItemPosition()))
                 .putBoolean(LOW_POWER_MODE, performanceModeSpinner.getSelectedItemPosition()
@@ -1840,14 +1954,19 @@ public final class SettingsActivity extends Activity {
                     .remove(WEATHER_EXTENDED_SUNSET_AT);
         }
         editor.apply();
+        DisplayProfileStore.captureActive(getSharedPreferences(PREFERENCES, MODE_PRIVATE));
         if (Build.VERSION.SDK_INT >= 21) {
             for (String source : initialFolderSources) {
-                if (!selectedFolders.contains(source)) {
+                if (!selectedFolders.contains(source)
+                        && !DisplayProfileStore.isReferencedByAnyProfile(
+                                getSharedPreferences(PREFERENCES, MODE_PRIVATE), source)) {
                     releaseTreePermission(treeUriFromSource(source));
                 }
             }
             for (String source : newlyGrantedTreeSources) {
-                if (!selectedFolders.contains(source)) {
+                if (!selectedFolders.contains(source)
+                        && !DisplayProfileStore.isReferencedByAnyProfile(
+                                getSharedPreferences(PREFERENCES, MODE_PRIVATE), source)) {
                     releaseTreePermission(treeUriFromSource(source));
                 }
             }

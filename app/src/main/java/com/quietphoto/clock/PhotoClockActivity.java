@@ -167,6 +167,7 @@ public final class PhotoClockActivity extends Activity {
     private AccessibleFrameLayout weatherBlock;
     private TextView photoTime;
     private TextView photoDate;
+    private BatteryStatusView batteryStatusView;
     private LinearLayout dateRow;
     private LinearLayout compactWeatherRow;
     private WeatherIconView compactWeatherIcon;
@@ -206,6 +207,7 @@ public final class PhotoClockActivity extends Activity {
     private final List<PhotoSource> photoFiles = new ArrayList<PhotoSource>();
     private final PlaybackNavigator playbackNavigator = new PlaybackNavigator();
     private final Handler photoHandler = new Handler();
+    private PowerStateMonitor powerStateMonitor;
     private final ExecutorService photoScanExecutor = Executors.newSingleThreadExecutor();
     private final ExecutorService photoDecodeExecutor = Executors.newSingleThreadExecutor();
     private final ExecutorService weatherExecutor = Executors.newSingleThreadExecutor();
@@ -225,6 +227,8 @@ public final class PhotoClockActivity extends Activity {
 
     private final SimpleDateFormat photoTimeFormat =
             new SimpleDateFormat("HH:mm", Locale.TAIWAN);
+    private final SimpleDateFormat photoTimeSecondsFormat =
+            new SimpleDateFormat("HH:mm:ss", Locale.TAIWAN);
     private final SimpleDateFormat photoDateFormat =
             new SimpleDateFormat("M月d日 EEEE", Locale.TAIWAN);
     private final SimpleDateFormat photoDateFormatEn =
@@ -255,6 +259,14 @@ public final class PhotoClockActivity extends Activity {
     private int nightStartHour = 23;
     private int nightEndHour = 7;
     private int transitionType;
+    private int clockSecondsMode = ClockSecondPolicy.OFF;
+    private int playbackOrder = PlaybackOrderPolicy.RANDOM;
+    private int keepScreenMode = PowerStatePolicy.KEEP_AWAKE_ALWAYS;
+    private boolean lowBatteryGuard;
+    private int batteryDisplayMode;
+    private PowerStateMonitor.State powerState = PowerStateMonitor.State.unknown();
+    private boolean lowBatteryForcedEco;
+    private boolean lowBatteryPaused;
     private boolean isNightSleepActive;
     private boolean isNightSleepWoken;
     private final Runnable nightSleepReDimRunnable = new Runnable() {
@@ -368,26 +380,57 @@ public final class PhotoClockActivity extends Activity {
     private ContentObserver mediaObserver;
     private boolean mediaObserverRegistered;
 
-    private static final class PhotoSource {
+    private static final class PhotoSource implements PlaybackOrderPolicy.Item {
         final File file;
         final Uri uri;
         final String identity;
+        final String displayName;
+        final long lastModified;
 
-        private PhotoSource(File file, Uri uri, String identity) {
+        private PhotoSource(File file, Uri uri, String identity,
+                String displayName, long lastModified) {
             this.file = file;
             this.uri = uri;
             this.identity = identity;
+            this.displayName = displayName == null ? "" : displayName;
+            this.lastModified = lastModified;
         }
 
         static PhotoSource fromFile(File file, String identity) {
-            return new PhotoSource(file, null, identity);
+            return fromFile(file, identity, true);
+        }
+
+        static PhotoSource fromFile(File file, String identity, boolean readModified) {
+            return new PhotoSource(file, null, identity,
+                    file == null ? "" : file.getName(),
+                    !readModified || file == null ? 0L : file.lastModified());
         }
 
         static PhotoSource fromUri(Uri uri) {
-            return new PhotoSource(null, uri, uri.toString());
+            return fromUri(uri, uri == null ? "" : uri.toString(), 0L);
+        }
+
+        static PhotoSource fromUri(Uri uri, String displayName, long lastModified) {
+            return new PhotoSource(null, uri, uri == null ? "" : uri.toString(),
+                    displayName, lastModified);
         }
 
         String key() {
+            return identity;
+        }
+
+        @Override
+        public String sortName() {
+            return displayName;
+        }
+
+        @Override
+        public long sortTimeMs() {
+            return lastModified;
+        }
+
+        @Override
+        public String stableKey() {
             return identity;
         }
     }
@@ -429,7 +472,7 @@ public final class PhotoClockActivity extends Activity {
             checkForegroundAlarm();
             checkPomodoroCompletion();
             checkNightSleepMode();
-            if (!isNightSleepActive && !photoLoading && !photoFiles.isEmpty()
+            if (!isNightSleepActive && !lowBatteryPaused && !photoLoading && !photoFiles.isEmpty()
                     && SystemClock.elapsedRealtime() >= nextPhotoAt) {
                 loadNextPhoto();
             }
@@ -485,6 +528,17 @@ public final class PhotoClockActivity extends Activity {
         }
     };
 
+    /** Updates only the clock text when optional seconds are visible. */
+    private final Runnable secondClockTicker = new Runnable() {
+        @Override
+        public void run() {
+            if (!activityResumed || isFinishing() || isDestroyed()) return;
+            if (!shouldShowClockSeconds() || isNightSleepActive) return;
+            updateClockTimeText();
+            scheduleSecondClockTicker();
+        }
+    };
+
     private final Runnable performanceGuardRunnable = new Runnable() {
         @Override
         public void run() {
@@ -534,6 +588,7 @@ public final class PhotoClockActivity extends Activity {
         removeExpiredTreeSources();
         photoFileLimit = resolvePhotoFileLimit();
         migrateOrientationClockLayouts();
+        powerStateMonitor = new PowerStateMonitor(this);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
 
         setContentView(buildInterface());
@@ -543,6 +598,7 @@ public final class PhotoClockActivity extends Activity {
         createMediaObserver();
         extractDefaultWallpapers();
         AlarmHelper.updateAlarmSchedule(this);
+        applyKeepScreenOnPolicy();
         checkAndRequestStoragePermission();
     }
 
@@ -673,6 +729,15 @@ public final class PhotoClockActivity extends Activity {
         activityResumed = true;
         hideSystemUI();
         loadSettingsConfig();
+        if (powerStateMonitor == null) powerStateMonitor = new PowerStateMonitor(this);
+        powerStateMonitor.start(new PowerStateMonitor.Listener() {
+            @Override
+            public void onPowerStateChanged(PowerStateMonitor.State state) {
+                handlePowerStateChanged(state);
+            }
+        });
+        handlePowerStateChanged(powerStateMonitor.getState());
+        scheduleSecondClockTicker();
         schedulePerformanceGuard();
         startPhotoSlideshow();
         if (hasPhotoReadAccess()) {
@@ -702,6 +767,7 @@ public final class PhotoClockActivity extends Activity {
             prefs.edit().putString(LAST_PHOTO_KEY, currentPhotoSource.key()).apply();
         }
         activityResumed = false;
+        photoHandler.removeCallbacks(secondClockTicker);
         photoHandler.removeCallbacks(hideImmersiveRunnable);
         photoHandler.removeCallbacks(burnInRunnable);
         photoHandler.removeCallbacks(performanceGuardRunnable);
@@ -715,6 +781,7 @@ public final class PhotoClockActivity extends Activity {
         }
         unregisterMediaObserver();
         unregisterLightSensor();
+        if (powerStateMonitor != null) powerStateMonitor.stop();
         stopPhotoSlideshow();
         super.onPause();
     }
@@ -730,8 +797,10 @@ public final class PhotoClockActivity extends Activity {
         photoHandler.removeCallbacks(safCatalogRefreshRunnable);
         photoHandler.removeCallbacks(pomodoroDialogTicker);
         photoHandler.removeCallbacks(hideFocusReminderRunnable);
+        photoHandler.removeCallbacks(secondClockTicker);
         unregisterMediaObserver();
         unregisterLightSensor();
+        if (powerStateMonitor != null) powerStateMonitor.stop();
         stopPhotoSlideshow();
         photoScanExecutor.shutdownNow();
         photoDecodeExecutor.shutdownNow();
@@ -1350,6 +1419,16 @@ public final class PhotoClockActivity extends Activity {
         int seconds = prefs.getInt(SettingsActivity.PHOTO_INTERVAL_SECONDS, SettingsActivity.DEFAULT_INTERVAL_SECONDS);
         photoIntervalMs = seconds * 1000L;
         photoPanDurationMs = Math.max(2000L, photoIntervalMs - 2000L);
+        playbackOrder = PlaybackOrderPolicy.normalize(
+                prefs.getInt(SettingsActivity.PHOTO_PLAYBACK_ORDER, PlaybackOrderPolicy.RANDOM));
+        clockSecondsMode = ClockSecondPolicy.normalize(
+                prefs.getInt(SettingsActivity.CLOCK_SECONDS_MODE, ClockSecondPolicy.OFF));
+        keepScreenMode = PowerStatePolicy.normalizeKeepAwakeMode(
+                prefs.getInt(SettingsActivity.KEEP_SCREEN_MODE,
+                        PowerStatePolicy.KEEP_AWAKE_ALWAYS));
+        lowBatteryGuard = prefs.getBoolean(SettingsActivity.LOW_BATTERY_GUARD, false);
+        batteryDisplayMode = Math.max(0, Math.min(2,
+                prefs.getInt(SettingsActivity.BATTERY_DISPLAY_MODE, 0)));
         clockBgEnabled = prefs.getBoolean(SettingsActivity.CLOCK_BACKGROUND_ENABLED, false);
         int legacyFontStyle = prefs.getInt(SettingsActivity.CLOCK_FONT_STYLE, 0);
         String defaultFont = BuildConfig.INCLUDE_STOROPIA ? "asset:font_storopia.ttf" : "asset:font_oxanium.ttf";
@@ -1431,9 +1510,94 @@ public final class PhotoClockActivity extends Activity {
         photoHandler.postDelayed(performanceGuardRunnable, PERFORMANCE_GUARD_INTERVAL_MS);
     }
 
+    private void handlePowerStateChanged(PowerStateMonitor.State state) {
+        if (state == null) return;
+        powerState = state;
+        applyKeepScreenOnPolicy();
+        boolean shouldForceEco = PowerStatePolicy.shouldForceEco(
+                lowBatteryGuard, state.batteryPresent, state.plugged, state.levelPercent);
+        boolean shouldPause = PowerStatePolicy.shouldPauseAutomaticPhotos(
+                lowBatteryGuard, state.batteryPresent, state.plugged, state.levelPercent);
+        boolean wasPaused = lowBatteryPaused;
+        boolean wasForcedEco = lowBatteryForcedEco;
+        if (!lowBatteryGuard) {
+            lowBatteryForcedEco = false;
+            lowBatteryPaused = false;
+        } else {
+            lowBatteryForcedEco = shouldForceEco;
+            lowBatteryPaused = shouldPause;
+            if (wasPaused && !shouldPause
+                    && !PowerStatePolicy.shouldResumeAutomaticPhotos(
+                            state.levelPercent, state.plugged)) {
+                lowBatteryPaused = true;
+            }
+            if (wasForcedEco && !shouldForceEco
+                    && !PowerStatePolicy.shouldResumeForcedEco(
+                            state.levelPercent, state.plugged)) {
+                lowBatteryForcedEco = true;
+            }
+        }
+        if (wasPaused != lowBatteryPaused) {
+            if (lowBatteryPaused) {
+                stopPhotoPan();
+            } else if (photoBitmap != null && !isNightSleepActive) {
+                startPhotoPan();
+                nextPhotoAt = SystemClock.elapsedRealtime() + photoIntervalMs;
+            }
+            schedulePhotoTicker();
+        }
+        if (batteryStatusView != null) {
+            batteryStatusView.setBatteryState(state);
+            updateBatteryStatusVisibility();
+        }
+        updateClockTimeText();
+        scheduleSecondClockTicker();
+        updateEffectivePerformanceForPower();
+    }
+
+    private void applyKeepScreenOnPolicy() {
+        PowerStateMonitor.State state = powerState == null
+                ? PowerStateMonitor.State.unknown() : powerState;
+        boolean keep = PowerStatePolicy.shouldKeepScreenOn(
+                keepScreenMode, state.batteryPresent, state.plugged, state.stateKnown);
+        if (keep) {
+            getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        } else {
+            getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        }
+    }
+
+    private void updateEffectivePerformanceForPower() {
+        int desired = lowBatteryForcedEco
+                ? PerformanceModePolicy.ECO : effectivePerformanceMode;
+        if (desired != effectivePerformanceMode) {
+            applyEffectivePerformanceMode(desired, false);
+        } else if (!lowBatteryForcedEco && selectedPerformanceMode != PerformanceModePolicy.SHOWCASE
+                && effectivePerformanceMode != selectedPerformanceMode) {
+            applyEffectivePerformanceMode(selectedPerformanceMode, false);
+        }
+    }
+
+    private void updateBatteryStatusVisibility() {
+        if (batteryStatusView == null) return;
+        PowerStateMonitor.State state = powerState == null
+                ? PowerStateMonitor.State.unknown() : powerState;
+        boolean visible = batteryDisplayMode == 1
+                || (batteryDisplayMode == 2 && state.batteryPresent && !state.plugged);
+        batteryStatusView.setVisibility(
+                visible && state.stateKnown && state.batteryPresent
+                        ? View.VISIBLE : View.GONE);
+    }
+
     private void updatePerformanceGuard() {
         if (selectedPerformanceMode != PerformanceModePolicy.SHOWCASE) {
-            applyEffectivePerformanceMode(selectedPerformanceMode, false);
+            applyEffectivePerformanceMode(
+                    lowBatteryForcedEco ? PerformanceModePolicy.ECO : selectedPerformanceMode,
+                    false);
+            return;
+        }
+        if (lowBatteryForcedEco) {
+            applyEffectivePerformanceMode(PerformanceModePolicy.ECO, false);
             return;
         }
         lastBatteryTemperatureC = readBatteryTemperature();
@@ -1447,6 +1611,9 @@ public final class PhotoClockActivity extends Activity {
     }
 
     private float readBatteryTemperature() {
+        if (powerState != null && !Float.isNaN(powerState.temperatureCelsius)) {
+            return powerState.temperatureCelsius;
+        }
         try {
             Intent battery = registerReceiver(null,
                     new IntentFilter(Intent.ACTION_BATTERY_CHANGED));
@@ -1563,6 +1730,7 @@ public final class PhotoClockActivity extends Activity {
     }
 
     private void enterNightSleepMode() {
+        photoHandler.removeCallbacks(secondClockTicker);
         WindowManager.LayoutParams lp = getWindow().getAttributes();
         lp.screenBrightness = 0.02f;
         getWindow().setAttributes(lp);
@@ -1607,6 +1775,7 @@ public final class PhotoClockActivity extends Activity {
             photoImage.animate().alpha(1.0f).setDuration(1600).start();
             startPhotoPan();
         }
+        scheduleSecondClockTicker();
         if (backgroundImage != null) {
             backgroundImage.animate().cancel();
             backgroundImage.animate().alpha(1.0f).setDuration(1600).start();
@@ -1964,6 +2133,9 @@ public final class PhotoClockActivity extends Activity {
         alarmParams.gravity = Gravity.BOTTOM;
         alarmParams.setMargins(dp(4), 0, 0, dp(3));
         dateRow.addView(alarmRow, alarmParams);
+
+        batteryStatusView = new BatteryStatusView(this);
+        batteryStatusView.setVisibility(View.GONE);
         dateBlock.addView(dateRow, new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.WRAP_CONTENT,
                 FrameLayout.LayoutParams.WRAP_CONTENT,
@@ -2119,6 +2291,14 @@ public final class PhotoClockActivity extends Activity {
         rootContainer.addView(clockPanel, new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 FrameLayout.LayoutParams.MATCH_PARENT));
+
+        // 電量固定在主畫面右上角，不隨日期／時鐘區塊拖曳或版面切換移動。
+        FrameLayout.LayoutParams batteryStatusParams = new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                Gravity.TOP | Gravity.END);
+        batteryStatusParams.setMargins(0, dp(16), dp(16), 0);
+        rootContainer.addView(batteryStatusView, batteryStatusParams);
 
         FrameLayout.LayoutParams legacyClockParams = new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.WRAP_CONTENT,
@@ -3316,6 +3496,7 @@ public final class PhotoClockActivity extends Activity {
             signature.append(source);
         }
         signature.append("\n@favoritesOnly=").append(favoritesOnly);
+        signature.append("\n@playbackOrder=").append(playbackOrder);
         List<String> hidden = new ArrayList<String>(hiddenPhotos);
         Collections.sort(hidden);
         for (String key : hidden) signature.append("\n@hidden=").append(key);
@@ -3417,7 +3598,7 @@ public final class PhotoClockActivity extends Activity {
 
     private void startPhotoPan() {
         stopPhotoPan();
-        if (isLowPowerModeActive() || effectiveDisplayMode() != 0) {
+        if (isLowPowerModeActive() || lowBatteryPaused || effectiveDisplayMode() != 0) {
             return;
         }
         if (photoImage == null || photoBitmap == null
@@ -3570,9 +3751,7 @@ public final class PhotoClockActivity extends Activity {
 
     private void updatePhotoClock() {
         nowDate.setTime(System.currentTimeMillis());
-        if (photoTime != null) {
-            photoTime.setText(photoTimeFormat.format(nowDate));
-        }
+        updateClockTimeText();
         if (photoDate != null) {
             if (FontManager.usesLatinDate(dateFontId)) {
                 photoDate.setText(photoDateFormatEn.format(nowDate));
@@ -3586,6 +3765,28 @@ public final class PhotoClockActivity extends Activity {
         }
         updateAlarmIndicator();
         updatePomodoroDisplay(false);
+    }
+
+    private void updateClockTimeText() {
+        if (photoTime == null) return;
+        nowDate.setTime(System.currentTimeMillis());
+        photoTime.setText(shouldShowClockSeconds()
+                ? photoTimeSecondsFormat.format(nowDate)
+                : photoTimeFormat.format(nowDate));
+    }
+
+    private boolean shouldShowClockSeconds() {
+        PowerStateMonitor.State state = powerState == null
+                ? PowerStateMonitor.State.unknown() : powerState;
+        return ClockSecondPolicy.shouldShowSeconds(clockSecondsMode,
+                state.batteryPresent, state.plugged);
+    }
+
+    private void scheduleSecondClockTicker() {
+        photoHandler.removeCallbacks(secondClockTicker);
+        if (!activityResumed || !shouldShowClockSeconds() || isNightSleepActive) return;
+        photoHandler.postDelayed(secondClockTicker,
+                ClockSecondPolicy.delayToNextSecond(System.currentTimeMillis()));
     }
 
     private void checkPomodoroCompletion() {
@@ -4164,6 +4365,7 @@ public final class PhotoClockActivity extends Activity {
     private void refreshPhotoFiles(
             final Set<String> selectedFolders, final String folderSignature) {
         photoFiles.clear();
+        playbackNavigator.setShuffle(playbackOrder == PlaybackOrderPolicy.RANDOM);
         playbackNavigator.reset(0);
         photoFailures = 0;
         photoCatalogLoaded = false;
@@ -4202,6 +4404,8 @@ public final class PhotoClockActivity extends Activity {
                                     return;
                                 }
                                 photoFiles.add(source);
+                                playbackNavigator.setShuffle(
+                                        playbackOrder == PlaybackOrderPolicy.RANDOM);
                                 playbackNavigator.reset(photoFiles.size());
                                 if (!photoLoading) loadNextPhoto();
                             }
@@ -4210,6 +4414,7 @@ public final class PhotoClockActivity extends Activity {
                 }, inaccessibleTree, generation);
                 final List<PhotoSource> discovered = filterPhotos(
                         found, favoriteSnapshot, hiddenSnapshot, favoritesOnlySnapshot);
+                PlaybackOrderPolicy.sort(discovered, playbackOrder);
 
                 runOnUiThread(new Runnable() {
                     @Override
@@ -4221,6 +4426,7 @@ public final class PhotoClockActivity extends Activity {
                         photoCatalogLoaded = true;
                         photoFiles.clear();
                         photoFiles.addAll(discovered);
+                        playbackNavigator.setShuffle(playbackOrder == PlaybackOrderPolicy.RANDOM);
                         int startupIndex = findPhotoIndex(currentPhotoSource);
                         if (startupIndex >= 0) {
                             playbackNavigator.resetAt(photoFiles.size(), startupIndex);
@@ -4337,7 +4543,9 @@ public final class PhotoClockActivity extends Activity {
             } else if (entry.isFile() && isSupportedPhoto(entry.getName())) {
                 String identity = canonicalPath(entry);
                 if (discoveredPhotos.add(identity)) {
-                    PhotoSource source = PhotoSource.fromFile(entry, identity);
+                    PhotoSource source = PhotoSource.fromFile(
+                            entry, identity, playbackOrder == PlaybackOrderPolicy.NEWEST
+                                    || playbackOrder == PlaybackOrderPolicy.OLDEST);
                     output.add(source);
                     discovery.onPhotoDiscovered(source);
                 }
@@ -4391,7 +4599,8 @@ public final class PhotoClockActivity extends Activity {
             String[] projection = {
                     DocumentsContract.Document.COLUMN_DOCUMENT_ID,
                     DocumentsContract.Document.COLUMN_DISPLAY_NAME,
-                    DocumentsContract.Document.COLUMN_MIME_TYPE
+                    DocumentsContract.Document.COLUMN_MIME_TYPE,
+                    DocumentsContract.Document.COLUMN_LAST_MODIFIED
             };
             cursor = getContentResolver().query(children, projection, null, null, null);
             if (cursor == null) return;
@@ -4401,6 +4610,8 @@ public final class PhotoClockActivity extends Activity {
                     DocumentsContract.Document.COLUMN_DISPLAY_NAME);
             int typeColumn = cursor.getColumnIndexOrThrow(
                     DocumentsContract.Document.COLUMN_MIME_TYPE);
+            int modifiedColumn = cursor.getColumnIndex(
+                    DocumentsContract.Document.COLUMN_LAST_MODIFIED);
             List<Uri> childDirectories = new ArrayList<Uri>();
             while (cursor.moveToNext() && discoveredPhotos.size() < photoFileLimit
                     && scanGeneration == photoGeneration) {
@@ -4412,7 +4623,9 @@ public final class PhotoClockActivity extends Activity {
                     childDirectories.add(child);
                 } else if (name != null && isSupportedPhoto(name)
                         && discoveredPhotos.add(child.toString())) {
-                    PhotoSource source = PhotoSource.fromUri(child);
+                    long lastModified = modifiedColumn >= 0 && !cursor.isNull(modifiedColumn)
+                            ? cursor.getLong(modifiedColumn) : 0L;
+                    PhotoSource source = PhotoSource.fromUri(child, name, lastModified);
                     output.add(source);
                     discovery.onPhotoDiscovered(source);
                 }

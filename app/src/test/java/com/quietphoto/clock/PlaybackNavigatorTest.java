@@ -43,4 +43,15 @@ public final class PlaybackNavigatorTest {
         assertNotEquals(3, navigator.next());
         assertEquals(3, navigator.previous());
     }
+
+    @Test
+    public void sequentialDeckFollowsCatalogOrderAndWraps() {
+        PlaybackNavigator navigator = new PlaybackNavigator(new Random(3));
+        navigator.setShuffle(false);
+        navigator.reset(3);
+        assertEquals(0, navigator.next());
+        assertEquals(1, navigator.next());
+        assertEquals(2, navigator.next());
+        assertEquals(0, navigator.next());
+    }
 }
