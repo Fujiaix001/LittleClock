@@ -26,7 +26,7 @@ android {
         minSdk = 17
         targetSdk = 36
         versionCode = appVersionCode
-        versionName = "$versionMajor.$versionMinor.$basePatch"
+        versionName = "$versionMajor.$versionMinor.$basePatch-redmi42"
     }
 
     flavorDimensions += "fontBundle"
