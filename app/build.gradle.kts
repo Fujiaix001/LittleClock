@@ -4,9 +4,11 @@ plugins {
     id("com.android.application")
 }
 
-val versionMajor = 4
-val versionMinor = 1
-val basePatch = 2
+// This branch is dedicated to the first-generation Redmi / Android 4.2.
+// Keep its version line separate from the universal LittleClock releases.
+val versionMajor = 42
+val versionMinor = 0
+val basePatch = 1
 val appVersionCode = (versionMajor * 10_000) + (versionMinor * 100) + basePatch
 val releasePropertiesFile = rootProject.file("keystore.properties")
 val releaseProperties = Properties().apply {
@@ -33,13 +35,13 @@ android {
             dimension = "fontBundle"
             applicationIdSuffix = ".storopia"
             versionCode = appVersionCode
-            versionName = "$versionMajor.$versionMinor.$basePatch-test-android4.2-storopia"
+            versionName = "$versionMajor.$versionMinor.$basePatch-redmi42-test-storopia"
             buildConfigField("boolean", "INCLUDE_STOROPIA", "true")
         }
         create("standard") {
             dimension = "fontBundle"
             versionCode = appVersionCode
-            versionName = "$versionMajor.$versionMinor.$basePatch"
+            versionName = "$versionMajor.$versionMinor.$basePatch-redmi42"
             buildConfigField("boolean", "INCLUDE_STOROPIA", "false")
         }
     }
