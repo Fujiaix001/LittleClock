@@ -136,6 +136,7 @@ public final class PhotoClockActivity extends Activity {
     private static final Uri PRIVATE_ALBUM_URI = Uri.parse(
             "content://com.quietphoto.privatealbum.photos/photos");
     private static final String PRIVATE_ALBUM_CONTENT_URI = "content_uri";
+    private static final String PRIVATE_ALBUM_SOURCE_FOLDER = "source_folder";
     private static final String PRIVATE_ALBUM_DISPLAY_NAME = "_display_name";
     private static final String PRIVATE_ALBUM_DATE_MODIFIED = "date_modified";
     private static final int MAX_PHOTO_FILES = 50000;
@@ -3509,6 +3510,15 @@ public final class PhotoClockActivity extends Activity {
         return prefs.getBoolean(SettingsActivity.PRIVATE_ALBUM_ENABLED, false);
     }
 
+    /** Null means all private-album folders (the legacy/default behavior). */
+    private Set<String> getSelectedPrivateAlbumFolders() {
+        if (!prefs.getBoolean(SettingsActivity.PRIVATE_ALBUM_FOLDERS_CUSTOMIZED, false)) {
+            return null;
+        }
+        Set<String> saved = prefs.getStringSet(SettingsActivity.PRIVATE_ALBUM_FOLDERS, null);
+        return saved == null ? new HashSet<String>() : new HashSet<String>(saved);
+    }
+
     private String buildPhotoFolderSignature(Set<String> folders) {
         List<String> ordered = new ArrayList<String>(folders);
         Collections.sort(ordered);
@@ -3530,6 +3540,17 @@ public final class PhotoClockActivity extends Activity {
         }
         if (isPrivateAlbumEnabled()) {
             signature.append("\n@private-album");
+            Set<String> privateFolders = getSelectedPrivateAlbumFolders();
+            if (privateFolders != null) {
+                List<String> orderedPrivateFolders = new ArrayList<String>(privateFolders);
+                Collections.sort(orderedPrivateFolders);
+                if (orderedPrivateFolders.isEmpty()) {
+                    signature.append("\n@private-folders-empty");
+                }
+                for (String folder : orderedPrivateFolders) {
+                    signature.append("\n@private-folder=").append(folder);
+                }
+            }
         }
         return signature.toString();
     }
@@ -4552,20 +4573,29 @@ public final class PhotoClockActivity extends Activity {
     private void collectPrivateAlbumPhotos(Set<String> discoveredPhotos,
             List<PhotoSource> output, PhotoDiscovery discovery, int scanGeneration) {
         Cursor cursor = null;
+        Set<String> selectedPrivateFolders = getSelectedPrivateAlbumFolders();
         try {
             cursor = getContentResolver().query(PRIVATE_ALBUM_URI,
                     new String[] {
                             PRIVATE_ALBUM_CONTENT_URI,
+                            PRIVATE_ALBUM_SOURCE_FOLDER,
                             PRIVATE_ALBUM_DISPLAY_NAME,
                             PRIVATE_ALBUM_DATE_MODIFIED
                     }, null, null, null);
             if (cursor == null) return;
             int uriColumn = cursor.getColumnIndex(PRIVATE_ALBUM_CONTENT_URI);
+            int folderColumn = cursor.getColumnIndex(PRIVATE_ALBUM_SOURCE_FOLDER);
             int nameColumn = cursor.getColumnIndex(PRIVATE_ALBUM_DISPLAY_NAME);
             int modifiedColumn = cursor.getColumnIndex(PRIVATE_ALBUM_DATE_MODIFIED);
             while (uriColumn >= 0 && cursor.moveToNext()
                     && discoveredPhotos.size() < photoFileLimit
                     && scanGeneration == photoGeneration) {
+                if (selectedPrivateFolders != null) {
+                    String folder = folderColumn >= 0 ? cursor.getString(folderColumn) : null;
+                    if (folder == null || !selectedPrivateFolders.contains(folder)) {
+                        continue;
+                    }
+                }
                 String value = cursor.getString(uriColumn);
                 if (value == null || value.length() == 0 || !discoveredPhotos.add(value)) {
                     continue;
