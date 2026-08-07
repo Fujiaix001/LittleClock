@@ -792,7 +792,7 @@ public final class PhotoClockActivity extends Activity {
         unregisterMediaObserver();
         unregisterLightSensor();
         if (powerStateMonitor != null) powerStateMonitor.stop();
-        stopPhotoSlideshow();
+        pausePhotoSlideshow();
         super.onPause();
     }
 
@@ -3442,11 +3442,14 @@ public final class PhotoClockActivity extends Activity {
         if (photoCatalogLoaded && folderSignature.equals(photoFolderSignature)) {
             if (photoBitmap == null && !photoLoading && !photoFiles.isEmpty()) {
                 loadNextPhoto();
+            } else if (photoBitmap != null) {
+                photoStatus.setVisibility(View.GONE);
+                applyPhotoPresentation(photoBitmap);
             }
             schedulePhotoTicker();
             return;
         }
-        stopPhotoSlideshow();
+        pausePhotoSlideshow();
         if (firstSlideshowStart) {
             firstSlideshowStart = false;
             queueStartupPhoto();
@@ -3560,7 +3563,8 @@ public final class PhotoClockActivity extends Activity {
         photoFolderSignature = "";
     }
 
-    private void stopPhotoSlideshow() {
+    /** Stops background work while retaining the current frame for instant resume. */
+    private void pausePhotoSlideshow() {
         photoHandler.removeCallbacks(photoTicker);
         stopPhotoPan();
         if (showcaseColorOverlay != null) {
@@ -3573,19 +3577,29 @@ public final class PhotoClockActivity extends Activity {
         photoScanInProgress = false;
         if (photoImage != null) {
             photoImage.animate().cancel();
-            photoImage.setImageDrawable(null);
             photoImage.setAlpha(1.0f);
         }
         if (backgroundImage != null) {
             backgroundImage.animate().cancel();
+            backgroundImage.setAlpha(1.0f);
+        }
+        safeRecycle(pendingPhotoBitmap);
+        pendingPhotoBitmap = null;
+    }
+
+    /** Releases the retained frame when the activity is actually destroyed. */
+    private void stopPhotoSlideshow() {
+        pausePhotoSlideshow();
+        if (photoImage != null) {
+            photoImage.setImageDrawable(null);
+        }
+        if (backgroundImage != null) {
             backgroundImage.setImageDrawable(null);
             backgroundImage.setVisibility(View.GONE);
         }
         releaseSoftBackground();
         safeRecycle(photoBitmap);
         photoBitmap = null;
-        safeRecycle(pendingPhotoBitmap);
-        pendingPhotoBitmap = null;
         currentPhotoSource = null;
         startupPhotoDisplayed = false;
     }

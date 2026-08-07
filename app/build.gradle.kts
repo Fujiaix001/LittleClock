@@ -8,7 +8,7 @@ plugins {
 // Keep its version line separate from the universal LittleClock releases.
 val versionMajor = 42
 val versionMinor = 0
-val basePatch = 1
+val basePatch = 2
 val appVersionCode = (versionMajor * 10_000) + (versionMinor * 100) + basePatch
 val releasePropertiesFile = rootProject.file("keystore.properties")
 val releaseProperties = Properties().apply {
