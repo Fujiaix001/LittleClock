@@ -539,10 +539,13 @@ public final class SettingsActivity extends Activity {
         TextView eyebrow = text("LITTLECLOCK", 11, ACCENT);
         if (Build.VERSION.SDK_INT >= 21) eyebrow.setLetterSpacing(0.18f);
         TextView title = text("設定", 28, PRIMARY);
+        TextView version = text("版本 " + BuildConfig.VERSION_NAME, 12, SECONDARY);
         titleStack.addView(eyebrow, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT, dp(20)));
+                LinearLayout.LayoutParams.WRAP_CONTENT, dp(17)));
         titleStack.addView(title, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT, dp(38)));
+                LinearLayout.LayoutParams.WRAP_CONTENT, dp(28)));
+        titleStack.addView(version, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, dp(17)));
 
         selectionText = text("", 14, ACCENT);
         selectionText.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
