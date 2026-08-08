@@ -7,10 +7,10 @@
 ## 📌 1. 專案基本資訊與位置
 
 - **專案名稱**：小時鐘 (LittleClock)
-- **當前版本**：`v4.1.1-test-android4.2-storopia` / `v4.1.1`
+- **當前版本**：`v4.1.0-test-android4.2-storopia` / `v4.1.0`
 - **專案絕對路徑**：`C:\Users\hsuchungming\Desktop\WorkSpace\LittleClock-photo-pan-frame-throttle`
-- **測試包位置**：`C:\Users\hsuchungming\Desktop\WorkSpace\LittleClock-photo-pan-frame-throttle\dist\LittleClock-v4.1.1-test-android4.2-storopia.apk`
-- **標準包位置**：`C:\Users\hsuchungming\Desktop\WorkSpace\LittleClock-photo-pan-frame-throttle\dist\LittleClock-v4.1.1.apk`
+- **測試包位置**：`C:\Users\hsuchungming\Desktop\WorkSpace\LittleClock-photo-pan-frame-throttle\dist\LittleClock-v4.1.0-test-android4.2-storopia.apk`
+- **標準包位置**：`C:\Users\hsuchungming\Desktop\WorkSpace\LittleClock-photo-pan-frame-throttle\dist\LittleClock-v4.1.0.apk`
 - **授權狀態**：Storopia 的分發授權尚未確認；包含此字型的 APK 僅供內部測試。
 
 ---
@@ -107,5 +107,5 @@ git status
 ## 💬 6. 新對話接續提示 (在新對話直接發送以下文字即可)
 
 ```text
-我們正在維護「小時鐘」(LittleClock) Android 專案，專案路徑為 C:\Users\hsuchungming\Desktop\WorkSpace\LittleClock-photo-pan-frame-throttle，當前版本為 v4.1.1-test / v4.1.1，已完成 Git 初始化。請參考該目錄下的 HANDOVER_GUIDE.md 並在開始寫作前先檢查 Git 管理狀態。
+我們正在維護「小時鐘」(LittleClock) Android 專案，專案路徑為 C:\Users\hsuchungming\Desktop\WorkSpace\LittleClock-photo-pan-frame-throttle，當前版本為 v4.1.0-test / v4.1.0，已完成 Git 初始化。請參考該目錄下的 HANDOVER_GUIDE.md 並在開始寫作前先檢查 Git 管理狀態。
 ```

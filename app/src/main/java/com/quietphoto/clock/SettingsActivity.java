@@ -58,7 +58,6 @@ import java.util.concurrent.Executors;
 public final class SettingsActivity extends Activity {
     public static final String PREFERENCES = "quietphotoclock";
     public static final String PHOTO_FOLDERS = "photo_folders";
-    public static final String PRIVATE_ALBUM_ENABLED = "private_album_enabled";
     public static final String PHOTO_INTERVAL_SECONDS = "photo_interval_seconds";
     public static final String PHOTO_PLAYBACK_ORDER = "photo_playback_order";
     public static final String CLOCK_SECONDS_MODE = "clock_seconds_mode";
@@ -203,7 +202,6 @@ public final class SettingsActivity extends Activity {
     private CheckBox burnInCheck;
     private CheckBox autoBrightnessCheck;
     private CheckBox favoritesOnlyCheck;
-    private CheckBox privateAlbumCheck;
     private CheckBox currentFolderCheck;
     private CheckBox weatherEnabledCheck;
     private CheckBox weatherLocationCheck;
@@ -1126,23 +1124,6 @@ public final class SettingsActivity extends Activity {
         albumHeaderParams.setMargins(dp(2), dp(8), dp(2), 0);
         root.addView(albumHeader, albumHeaderParams);
 
-        privateAlbumCheck = checkBox("使用「手機私有相簿」中的照片",
-                getSharedPreferences(PREFERENCES, MODE_PRIVATE)
-                        .getBoolean(PRIVATE_ALBUM_ENABLED, false));
-        privateAlbumCheck.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View view) {
-                updateSelectionSummary();
-            }
-        });
-        root.addView(privateAlbumCheck, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, dp(42)));
-        TextView privateAlbumHint = text(
-                "由手機私有相簿集中管理；加入或刪除照片後會自動重新讀取。",
-                13, SECONDARY);
-        privateAlbumHint.setPadding(dp(10), 0, dp(10), dp(5));
-        root.addView(privateAlbumHint);
-
         LinearLayout pathRow = new LinearLayout(this);
         pathRow.setGravity(Gravity.CENTER_VERTICAL);
         Button up = button(Build.VERSION.SDK_INT >= 21 ? "選擇資料夾" : "上一層", PANEL);
@@ -1849,13 +1830,11 @@ public final class SettingsActivity extends Activity {
     }
 
     private void updateSelectionSummary() {
-        int sourceCount = selectedFolders.size()
-                + (privateAlbumCheck != null && privateAlbumCheck.isChecked() ? 1 : 0);
-        if (sourceCount == 0) {
+        if (selectedFolders.isEmpty()) {
             selectionText.setText("尚未選擇相簿");
         } else {
             selectionText.setText(String.format(
-                    Locale.TAIWAN, "已選 %d 個相簿", sourceCount));
+                    Locale.TAIWAN, "已選 %d 個相簿", selectedFolders.size()));
         }
     }
 
@@ -1957,8 +1936,6 @@ public final class SettingsActivity extends Activity {
                 .putInt(PomodoroHelper.PREF_DISPLAY_MODE,
                         PomodoroHelper.normalizeDisplayMode(
                                 pomodoroDisplayModeSpinner.getSelectedItemPosition()))
-                .putBoolean(PRIVATE_ALBUM_ENABLED,
-                        privateAlbumCheck != null && privateAlbumCheck.isChecked())
                 .putStringSet(PHOTO_FOLDERS, new HashSet<String>(selectedFolders));
         if (resetClockLayoutRequested) {
             PhotoClockActivity.resetClockLayoutPreferences(editor);

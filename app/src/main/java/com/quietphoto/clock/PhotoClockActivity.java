@@ -133,11 +133,6 @@ public final class PhotoClockActivity extends Activity {
     private static final int SCALE_TARGET_WEATHER = 3;
     private static final String LAST_PHOTO_KEY = "last_photo_key";
     private static final String PHOTO_DIRECTORY = "QuietPanel/Photos";
-    private static final Uri PRIVATE_ALBUM_URI = Uri.parse(
-            "content://com.quietphoto.privatealbum.photos/photos");
-    private static final String PRIVATE_ALBUM_CONTENT_URI = "content_uri";
-    private static final String PRIVATE_ALBUM_DISPLAY_NAME = "_display_name";
-    private static final String PRIVATE_ALBUM_DATE_MODIFIED = "date_modified";
     private static final int MAX_PHOTO_FILES = 50000;
     private static final int MAX_PHOTO_DEPTH = 12;
     private static final long IMMERSIVE_TIMEOUT_MS = 5000L;
@@ -734,10 +729,6 @@ public final class PhotoClockActivity extends Activity {
         activityResumed = true;
         hideSystemUI();
         loadSettingsConfig();
-        if (isPrivateAlbumEnabled()) {
-            // The private album may have changed while this activity was paused.
-            invalidatePhotoCatalog();
-        }
         if (powerStateMonitor == null) powerStateMonitor = new PowerStateMonitor(this);
         powerStateMonitor.start(new PowerStateMonitor.Listener() {
             @Override
@@ -749,7 +740,7 @@ public final class PhotoClockActivity extends Activity {
         scheduleSecondClockTicker();
         schedulePerformanceGuard();
         startPhotoSlideshow();
-        if (hasPhotoReadAccess() || isPrivateAlbumEnabled()) {
+        if (hasPhotoReadAccess()) {
             registerMediaObserver();
         }
         registerLightSensor();
@@ -1303,19 +1294,9 @@ public final class PhotoClockActivity extends Activity {
 
     private void registerMediaObserver() {
         if (!mediaObserverRegistered && mediaObserver != null) {
-            try {
-                if (hasPhotoReadAccess()) {
-                    getContentResolver().registerContentObserver(
-                            MediaStore.Images.Media.EXTERNAL_CONTENT_URI, true, mediaObserver);
-                }
-                if (isPrivateAlbumEnabled()) {
-                    getContentResolver().registerContentObserver(
-                            PRIVATE_ALBUM_URI, true, mediaObserver);
-                }
-                mediaObserverRegistered = true;
-            } catch (RuntimeException ignored) {
-                // Either source is optional; normal foreground rescans still work.
-            }
+            getContentResolver().registerContentObserver(
+                    MediaStore.Images.Media.EXTERNAL_CONTENT_URI, true, mediaObserver);
+            mediaObserverRegistered = true;
         }
     }
 
@@ -3505,10 +3486,6 @@ public final class PhotoClockActivity extends Activity {
         return normalized;
     }
 
-    private boolean isPrivateAlbumEnabled() {
-        return prefs.getBoolean(SettingsActivity.PRIVATE_ALBUM_ENABLED, false);
-    }
-
     private String buildPhotoFolderSignature(Set<String> folders) {
         List<String> ordered = new ArrayList<String>(folders);
         Collections.sort(ordered);
@@ -3527,9 +3504,6 @@ public final class PhotoClockActivity extends Activity {
             List<String> favorites = new ArrayList<String>(favoritePhotos);
             Collections.sort(favorites);
             for (String key : favorites) signature.append("\n@favorite=").append(key);
-        }
-        if (isPrivateAlbumEnabled()) {
-            signature.append("\n@private-album");
         }
         return signature.toString();
     }
@@ -4510,8 +4484,7 @@ public final class PhotoClockActivity extends Activity {
             List<PhotoSource> output, PhotoDiscovery discovery, boolean[] inaccessibleTree,
             int scanGeneration) {
         Set<String> folders = new HashSet<String>(selectedFolders);
-        boolean includePrivateAlbum = isPrivateAlbumEnabled();
-        if (folders.isEmpty() && !includePrivateAlbum) {
+        if (folders.isEmpty()) {
             if (Build.VERSION.SDK_INT >= 21) {
                 File bundledDirectory = new File(getFilesDir(), "數位風景");
                 if (bundledDirectory.isDirectory()) {
@@ -4529,9 +4502,6 @@ public final class PhotoClockActivity extends Activity {
 
         Set<String> visitedDirectories = new HashSet<String>();
         Set<String> discoveredPhotos = new LinkedHashSet<String>();
-        if (includePrivateAlbum) {
-            collectPrivateAlbumPhotos(discoveredPhotos, output, discovery, scanGeneration);
-        }
         for (String source : folders) {
             if (scanGeneration != photoGeneration
                     || discoveredPhotos.size() >= photoFileLimit) break;
@@ -4546,41 +4516,6 @@ public final class PhotoClockActivity extends Activity {
                             output, discovery, 0, scanGeneration);
                 }
             }
-        }
-    }
-
-    private void collectPrivateAlbumPhotos(Set<String> discoveredPhotos,
-            List<PhotoSource> output, PhotoDiscovery discovery, int scanGeneration) {
-        Cursor cursor = null;
-        try {
-            cursor = getContentResolver().query(PRIVATE_ALBUM_URI,
-                    new String[] {
-                            PRIVATE_ALBUM_CONTENT_URI,
-                            PRIVATE_ALBUM_DISPLAY_NAME,
-                            PRIVATE_ALBUM_DATE_MODIFIED
-                    }, null, null, null);
-            if (cursor == null) return;
-            int uriColumn = cursor.getColumnIndex(PRIVATE_ALBUM_CONTENT_URI);
-            int nameColumn = cursor.getColumnIndex(PRIVATE_ALBUM_DISPLAY_NAME);
-            int modifiedColumn = cursor.getColumnIndex(PRIVATE_ALBUM_DATE_MODIFIED);
-            while (uriColumn >= 0 && cursor.moveToNext()
-                    && discoveredPhotos.size() < photoFileLimit
-                    && scanGeneration == photoGeneration) {
-                String value = cursor.getString(uriColumn);
-                if (value == null || value.length() == 0 || !discoveredPhotos.add(value)) {
-                    continue;
-                }
-                String displayName = nameColumn >= 0 ? cursor.getString(nameColumn) : value;
-                long modifiedSeconds = modifiedColumn >= 0 ? cursor.getLong(modifiedColumn) : 0L;
-                PhotoSource source = PhotoSource.fromUri(
-                        Uri.parse(value), displayName, modifiedSeconds * 1000L);
-                output.add(source);
-                discovery.onPhotoDiscovered(source);
-            }
-        } catch (RuntimeException ignored) {
-            // The private album app is optional and may not be installed.
-        } finally {
-            if (cursor != null) cursor.close();
         }
     }
 
