@@ -2748,7 +2748,7 @@ public final class PhotoClockActivity extends Activity {
             setClockTextSize(weatherForecastText, 12.0f * weatherScale);
         }
         if (daylightLabel != null) {
-            daylightLabel.setGravity(isLinkedOriginalLayout()
+            daylightLabel.setGravity(isOriginalLayout()
                     ? Gravity.CENTER : Gravity.RIGHT);
             setClockTextSize(daylightLabel, 12.0f * weatherScale);
         }
