@@ -2234,7 +2234,7 @@ public final class PhotoClockActivity extends Activity {
         weatherExtendedPanel = new LinearLayout(this);
         weatherExtendedPanel.setOrientation(LinearLayout.VERTICAL);
         weatherExtendedPanel.setGravity(Gravity.CENTER_HORIZONTAL);
-        weatherExtendedPanel.setPadding(dp(4), 0, dp(4), 0);
+        weatherExtendedPanel.setPadding(0, 0, 0, 0);
         weatherExtendedPanel.setVisibility(View.GONE);
 
         weatherForecastText = new TextView(this);
@@ -2249,17 +2249,17 @@ public final class PhotoClockActivity extends Activity {
 
         daylightProgressView = new DaylightProgressView(this);
         LinearLayout.LayoutParams daylightProgressParams = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, dp(16));
-        daylightProgressParams.topMargin = dp(2);
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(14));
         weatherExtendedPanel.addView(daylightProgressView, daylightProgressParams);
 
         daylightLabel = new TextView(this);
-        daylightLabel.setTextSize(10);
-        daylightLabel.setTextColor(SECONDARY);
-        daylightLabel.setGravity(Gravity.CENTER);
+        daylightLabel.setTextSize(12);
+        daylightLabel.setTextColor(Color.WHITE);
+        daylightLabel.setGravity(Gravity.RIGHT);
         daylightLabel.setIncludeFontPadding(false);
+        daylightLabel.setShadowLayer(dp(2), dp(1), dp(1), Color.BLACK);
         weatherExtendedPanel.addView(daylightLabel, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(18)));
 
         LinearLayout.LayoutParams extendedWeatherParams = new LinearLayout.LayoutParams(
                 dp(220), LinearLayout.LayoutParams.WRAP_CONTENT);
@@ -2768,7 +2768,20 @@ public final class PhotoClockActivity extends Activity {
             setClockTextSize(weatherForecastText, 12.0f * weatherScale);
         }
         if (daylightLabel != null) {
-            setClockTextSize(daylightLabel, 10.0f * weatherScale);
+            setClockTextSize(daylightLabel, 12.0f * weatherScale);
+        }
+        int daylightWidth = Math.max(1, Math.round(220.0f * weatherScale));
+        if (weatherExtendedPanel != null) {
+            resizeView(weatherExtendedPanel, daylightWidth,
+                    ViewGroup.LayoutParams.WRAP_CONTENT);
+        }
+        if (daylightProgressView != null) {
+            resizeView(daylightProgressView, ViewGroup.LayoutParams.MATCH_PARENT,
+                    Math.max(1, Math.round(14.0f * weatherScale)));
+        }
+        if (daylightLabel != null) {
+            resizeView(daylightLabel, ViewGroup.LayoutParams.MATCH_PARENT,
+                    Math.max(1, Math.round(18.0f * weatherScale)));
         }
         if (compactWeatherIcon != null) {
             int size = Math.max(1, Math.round(22.0f * weatherScale));
@@ -4094,8 +4107,8 @@ public final class PhotoClockActivity extends Activity {
     private void resizeView(View view, int widthDp, int heightDp) {
         android.view.ViewGroup.LayoutParams params = view.getLayoutParams();
         if (params != null) {
-            int width = dp(widthDp);
-            int height = dp(heightDp);
+            int width = widthDp < 0 ? widthDp : dp(widthDp);
+            int height = heightDp < 0 ? heightDp : dp(heightDp);
             if (params.width != width || params.height != height) {
                 params.width = width;
                 params.height = height;
