@@ -2235,7 +2235,7 @@ public final class PhotoClockActivity extends Activity {
         daylightLabel = new TextView(this);
         daylightLabel.setTextSize(12);
         daylightLabel.setTextColor(Color.WHITE);
-        daylightLabel.setGravity(Gravity.RIGHT);
+        daylightLabel.setGravity(Gravity.CENTER);
         daylightLabel.setIncludeFontPadding(false);
         daylightLabel.setShadowLayer(dp(2), dp(1), dp(1), Color.BLACK);
         weatherExtendedPanel.addView(daylightLabel, new LinearLayout.LayoutParams(
@@ -2748,6 +2748,8 @@ public final class PhotoClockActivity extends Activity {
             setClockTextSize(weatherForecastText, 12.0f * weatherScale);
         }
         if (daylightLabel != null) {
+            daylightLabel.setGravity(isLinkedOriginalLayout()
+                    ? Gravity.CENTER : Gravity.RIGHT);
             setClockTextSize(daylightLabel, 12.0f * weatherScale);
         }
         int daylightWidth = Math.max(1, Math.round(220.0f * weatherScale));
