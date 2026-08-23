@@ -133,6 +133,12 @@ public final class PhotoClockActivity extends Activity {
     private static final int SCALE_TARGET_WEATHER = 3;
     private static final String LAST_PHOTO_KEY = "last_photo_key";
     private static final String PHOTO_DIRECTORY = "QuietPanel/Photos";
+    private static final Uri PRIVATE_ALBUM_URI = Uri.parse(
+            "content://com.quietphoto.privatealbum.photos/photos");
+    private static final String PRIVATE_ALBUM_CONTENT_URI = "content_uri";
+    private static final String PRIVATE_ALBUM_SOURCE_FOLDER = "source_folder";
+    private static final String PRIVATE_ALBUM_DISPLAY_NAME = "_display_name";
+    private static final String PRIVATE_ALBUM_DATE_MODIFIED = "date_modified";
     private static final int MAX_PHOTO_FILES = 50000;
     private static final int MAX_PHOTO_DEPTH = 12;
     private static final long IMMERSIVE_TIMEOUT_MS = 5000L;
@@ -729,6 +735,10 @@ public final class PhotoClockActivity extends Activity {
         activityResumed = true;
         hideSystemUI();
         loadSettingsConfig();
+        if (isPrivateAlbumEnabled()) {
+            // The private album may have changed while this activity was paused.
+            invalidatePhotoCatalog();
+        }
         if (powerStateMonitor == null) powerStateMonitor = new PowerStateMonitor(this);
         powerStateMonitor.start(new PowerStateMonitor.Listener() {
             @Override
@@ -740,7 +750,7 @@ public final class PhotoClockActivity extends Activity {
         scheduleSecondClockTicker();
         schedulePerformanceGuard();
         startPhotoSlideshow();
-        if (hasPhotoReadAccess()) {
+        if (hasPhotoReadAccess() || isPrivateAlbumEnabled()) {
             registerMediaObserver();
         }
         registerLightSensor();
@@ -782,7 +792,7 @@ public final class PhotoClockActivity extends Activity {
         unregisterMediaObserver();
         unregisterLightSensor();
         if (powerStateMonitor != null) powerStateMonitor.stop();
-        stopPhotoSlideshow();
+        pausePhotoSlideshow();
         super.onPause();
     }
 
@@ -1294,9 +1304,19 @@ public final class PhotoClockActivity extends Activity {
 
     private void registerMediaObserver() {
         if (!mediaObserverRegistered && mediaObserver != null) {
-            getContentResolver().registerContentObserver(
-                    MediaStore.Images.Media.EXTERNAL_CONTENT_URI, true, mediaObserver);
-            mediaObserverRegistered = true;
+            try {
+                if (hasPhotoReadAccess()) {
+                    getContentResolver().registerContentObserver(
+                            MediaStore.Images.Media.EXTERNAL_CONTENT_URI, true, mediaObserver);
+                }
+                if (isPrivateAlbumEnabled()) {
+                    getContentResolver().registerContentObserver(
+                            PRIVATE_ALBUM_URI, true, mediaObserver);
+                }
+                mediaObserverRegistered = true;
+            } catch (RuntimeException ignored) {
+                // Either source is optional; foreground rescans still work.
+            }
         }
     }
 
@@ -3437,11 +3457,14 @@ public final class PhotoClockActivity extends Activity {
         if (photoCatalogLoaded && folderSignature.equals(photoFolderSignature)) {
             if (photoBitmap == null && !photoLoading && !photoFiles.isEmpty()) {
                 loadNextPhoto();
+            } else if (photoBitmap != null) {
+                photoStatus.setVisibility(View.GONE);
+                applyPhotoPresentation(photoBitmap);
             }
             schedulePhotoTicker();
             return;
         }
-        stopPhotoSlideshow();
+        pausePhotoSlideshow();
         if (firstSlideshowStart) {
             firstSlideshowStart = false;
             queueStartupPhoto();
@@ -3501,6 +3524,19 @@ public final class PhotoClockActivity extends Activity {
         return normalized;
     }
 
+    private boolean isPrivateAlbumEnabled() {
+        return prefs.getBoolean(SettingsActivity.PRIVATE_ALBUM_ENABLED, false);
+    }
+
+    /** Null means all private-album folders (legacy/default behavior). */
+    private Set<String> getSelectedPrivateAlbumFolders() {
+        if (!prefs.getBoolean(SettingsActivity.PRIVATE_ALBUM_FOLDERS_CUSTOMIZED, false)) {
+            return null;
+        }
+        Set<String> saved = prefs.getStringSet(SettingsActivity.PRIVATE_ALBUM_FOLDERS, null);
+        return saved == null ? new HashSet<String>() : new HashSet<String>(saved);
+    }
+
     private String buildPhotoFolderSignature(Set<String> folders) {
         List<String> ordered = new ArrayList<String>(folders);
         Collections.sort(ordered);
@@ -3520,6 +3556,20 @@ public final class PhotoClockActivity extends Activity {
             Collections.sort(favorites);
             for (String key : favorites) signature.append("\n@favorite=").append(key);
         }
+        if (isPrivateAlbumEnabled()) {
+            signature.append("\n@private-album");
+            Set<String> privateFolders = getSelectedPrivateAlbumFolders();
+            if (privateFolders != null) {
+                List<String> orderedPrivateFolders = new ArrayList<String>(privateFolders);
+                Collections.sort(orderedPrivateFolders);
+                if (orderedPrivateFolders.isEmpty()) {
+                    signature.append("\n@private-folders-empty");
+                }
+                for (String folder : orderedPrivateFolders) {
+                    signature.append("\n@private-folder=").append(folder);
+                }
+            }
+        }
         return signature.toString();
     }
 
@@ -3528,7 +3578,8 @@ public final class PhotoClockActivity extends Activity {
         photoFolderSignature = "";
     }
 
-    private void stopPhotoSlideshow() {
+    /** Stops background work while retaining the current frame for instant resume. */
+    private void pausePhotoSlideshow() {
         photoHandler.removeCallbacks(photoTicker);
         stopPhotoPan();
         if (showcaseColorOverlay != null) {
@@ -3541,19 +3592,29 @@ public final class PhotoClockActivity extends Activity {
         photoScanInProgress = false;
         if (photoImage != null) {
             photoImage.animate().cancel();
-            photoImage.setImageDrawable(null);
             photoImage.setAlpha(1.0f);
         }
         if (backgroundImage != null) {
             backgroundImage.animate().cancel();
+            backgroundImage.setAlpha(1.0f);
+        }
+        safeRecycle(pendingPhotoBitmap);
+        pendingPhotoBitmap = null;
+    }
+
+    /** Releases the retained frame when the activity is actually destroyed. */
+    private void stopPhotoSlideshow() {
+        pausePhotoSlideshow();
+        if (photoImage != null) {
+            photoImage.setImageDrawable(null);
+        }
+        if (backgroundImage != null) {
             backgroundImage.setImageDrawable(null);
             backgroundImage.setVisibility(View.GONE);
         }
         releaseSoftBackground();
         safeRecycle(photoBitmap);
         photoBitmap = null;
-        safeRecycle(pendingPhotoBitmap);
-        pendingPhotoBitmap = null;
         currentPhotoSource = null;
         startupPhotoDisplayed = false;
     }
@@ -4499,7 +4560,8 @@ public final class PhotoClockActivity extends Activity {
             List<PhotoSource> output, PhotoDiscovery discovery, boolean[] inaccessibleTree,
             int scanGeneration) {
         Set<String> folders = new HashSet<String>(selectedFolders);
-        if (folders.isEmpty()) {
+        boolean includePrivateAlbum = isPrivateAlbumEnabled();
+        if (folders.isEmpty() && !includePrivateAlbum) {
             if (Build.VERSION.SDK_INT >= 21) {
                 File bundledDirectory = new File(getFilesDir(), "數位風景");
                 if (bundledDirectory.isDirectory()) {
@@ -4517,6 +4579,9 @@ public final class PhotoClockActivity extends Activity {
 
         Set<String> visitedDirectories = new HashSet<String>();
         Set<String> discoveredPhotos = new LinkedHashSet<String>();
+        if (includePrivateAlbum) {
+            collectPrivateAlbumPhotos(discoveredPhotos, output, discovery, scanGeneration);
+        }
         for (String source : folders) {
             if (scanGeneration != photoGeneration
                     || discoveredPhotos.size() >= photoFileLimit) break;
@@ -4531,6 +4596,47 @@ public final class PhotoClockActivity extends Activity {
                             output, discovery, 0, scanGeneration);
                 }
             }
+        }
+    }
+
+    private void collectPrivateAlbumPhotos(Set<String> discoveredPhotos,
+            List<PhotoSource> output, PhotoDiscovery discovery, int scanGeneration) {
+        Cursor cursor = null;
+        Set<String> selectedPrivateFolders = getSelectedPrivateAlbumFolders();
+        try {
+            cursor = getContentResolver().query(PRIVATE_ALBUM_URI,
+                    new String[] {
+                            PRIVATE_ALBUM_CONTENT_URI,
+                            PRIVATE_ALBUM_SOURCE_FOLDER,
+                            PRIVATE_ALBUM_DISPLAY_NAME,
+                            PRIVATE_ALBUM_DATE_MODIFIED
+                    }, null, null, null);
+            if (cursor == null) return;
+            int uriColumn = cursor.getColumnIndex(PRIVATE_ALBUM_CONTENT_URI);
+            int folderColumn = cursor.getColumnIndex(PRIVATE_ALBUM_SOURCE_FOLDER);
+            int nameColumn = cursor.getColumnIndex(PRIVATE_ALBUM_DISPLAY_NAME);
+            int modifiedColumn = cursor.getColumnIndex(PRIVATE_ALBUM_DATE_MODIFIED);
+            while (uriColumn >= 0 && cursor.moveToNext()
+                    && discoveredPhotos.size() < photoFileLimit
+                    && scanGeneration == photoGeneration) {
+                String folder = folderColumn >= 0 ? cursor.getString(folderColumn) : null;
+                if (!PhotoCatalogPolicy.includesPrivateFolder(
+                        selectedPrivateFolders, folder)) continue;
+                String value = cursor.getString(uriColumn);
+                if (value == null || value.length() == 0 || !discoveredPhotos.add(value)) {
+                    continue;
+                }
+                String displayName = nameColumn >= 0 ? cursor.getString(nameColumn) : value;
+                long modifiedSeconds = modifiedColumn >= 0 ? cursor.getLong(modifiedColumn) : 0L;
+                PhotoSource source = PhotoSource.fromUri(
+                        Uri.parse(value), displayName, modifiedSeconds * 1000L);
+                output.add(source);
+                discovery.onPhotoDiscovered(source);
+            }
+        } catch (RuntimeException ignored) {
+            // PhonePrivateAlbum may not be installed yet.
+        } finally {
+            if (cursor != null) cursor.close();
         }
     }
 

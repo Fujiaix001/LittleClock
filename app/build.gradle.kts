@@ -4,10 +4,13 @@ plugins {
     id("com.android.application")
 }
 
-val versionMajor = 4
-val versionMinor = 2
+// Dedicated version line for the first-generation Redmi / Android 4.2.
+// Keep the code above the previous 42.0.x device builds for in-place updates.
+val versionMajor = 42
+val versionMinor = 1
 val basePatch = 0
 val appVersionCode = (versionMajor * 10_000) + (versionMinor * 100) + basePatch
+val redmiVersionName = "4.2.0-redmi42-private"
 val releasePropertiesFile = rootProject.file("keystore.properties")
 val releaseProperties = Properties().apply {
     if (releasePropertiesFile.isFile) {
@@ -24,7 +27,7 @@ android {
         minSdk = 17
         targetSdk = 36
         versionCode = appVersionCode
-        versionName = "$versionMajor.$versionMinor.$basePatch"
+        versionName = redmiVersionName
     }
 
     flavorDimensions += "fontBundle"
@@ -33,13 +36,13 @@ android {
             dimension = "fontBundle"
             applicationIdSuffix = ".storopia"
             versionCode = appVersionCode
-            versionName = "$versionMajor.$versionMinor.$basePatch-test-android4.2-storopia"
+            versionName = "$redmiVersionName-test-storopia"
             buildConfigField("boolean", "INCLUDE_STOROPIA", "true")
         }
         create("standard") {
             dimension = "fontBundle"
             versionCode = appVersionCode
-            versionName = "$versionMajor.$versionMinor.$basePatch"
+            versionName = redmiVersionName
             buildConfigField("boolean", "INCLUDE_STOROPIA", "false")
         }
     }

@@ -5,6 +5,7 @@ import android.app.AlertDialog;
 import android.Manifest;
 import android.content.Intent;
 import android.content.DialogInterface;
+import android.database.Cursor;
 import android.graphics.Color;
 import android.graphics.Canvas;
 import android.graphics.ColorFilter;
@@ -49,8 +50,10 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -58,6 +61,10 @@ import java.util.concurrent.Executors;
 public final class SettingsActivity extends Activity {
     public static final String PREFERENCES = "quietphotoclock";
     public static final String PHOTO_FOLDERS = "photo_folders";
+    public static final String PRIVATE_ALBUM_ENABLED = "private_album_enabled";
+    public static final String PRIVATE_ALBUM_FOLDERS = "private_album_folders";
+    public static final String PRIVATE_ALBUM_FOLDERS_CUSTOMIZED =
+            "private_album_folders_customized";
     public static final String PHOTO_INTERVAL_SECONDS = "photo_interval_seconds";
     public static final String PHOTO_PLAYBACK_ORDER = "photo_playback_order";
     public static final String CLOCK_SECONDS_MODE = "clock_seconds_mode";
@@ -116,6 +123,11 @@ public final class SettingsActivity extends Activity {
 
     public static final int DEFAULT_INTERVAL_SECONDS = 40;
     private static final int REQUEST_PICK_PHOTO_TREE = 4101;
+    private static final Uri PRIVATE_ALBUM_URI = Uri.parse(
+            "content://com.quietphoto.privatealbum.photos/photos");
+    private static final Uri PRIVATE_ALBUM_FOLDERS_URI = Uri.parse(
+            "content://com.quietphoto.privatealbum.photos/folders");
+    private static final String PRIVATE_ALBUM_SOURCE_FOLDER = "source_folder";
     private static final int[] INTERVAL_STEPS = { 15, 30, 40, 60, 120 };
 
     private static final int BACKGROUND = Color.rgb(9, 13, 18);
@@ -202,6 +214,11 @@ public final class SettingsActivity extends Activity {
     private CheckBox burnInCheck;
     private CheckBox autoBrightnessCheck;
     private CheckBox favoritesOnlyCheck;
+    private CheckBox privateAlbumCheck;
+    private LinearLayout privateAlbumFolderList;
+    private TextView privateAlbumFolderHint;
+    private final Map<String, CheckBox> privateAlbumFolderChecks =
+            new LinkedHashMap<String, CheckBox>();
     private CheckBox currentFolderCheck;
     private CheckBox weatherEnabledCheck;
     private CheckBox weatherLocationCheck;
@@ -525,10 +542,11 @@ public final class SettingsActivity extends Activity {
         titleRow.setGravity(Gravity.CENTER_VERTICAL);
         LinearLayout titleStack = new LinearLayout(this);
         titleStack.setOrientation(LinearLayout.VERTICAL);
-        TextView eyebrow = text("LITTLECLOCK  ·  4.2", 11, ACCENT);
+        TextView eyebrow = text("LITTLECLOCK  ·  REDMI 4.2", 11, ACCENT);
+        eyebrow.setContentDescription("LittleClock " + BuildConfig.VERSION_NAME);
         if (Build.VERSION.SDK_INT >= 21) eyebrow.setLetterSpacing(0.18f);
         TextView title = text("設定", 28, PRIMARY);
-        TextView subtitle = text("依類別展開，需要時再調整", 13, SECONDARY);
+        TextView subtitle = text("私人相簿專用版  ·  v4.2.0", 13, SECONDARY);
         titleStack.addView(eyebrow, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT, dp(20)));
         titleStack.addView(title, new LinearLayout.LayoutParams(
@@ -1133,6 +1151,33 @@ public final class SettingsActivity extends Activity {
                 LinearLayout.LayoutParams.MATCH_PARENT, dp(44)));
 
         // 相簿資料夾選擇。
+        addDivider(albumSection);
+        addInlineSectionHeader(albumSection, "手機私有相簿", "REDMI PRIVATE");
+        privateAlbumCheck = checkBox("播放「手機私有相簿」中的照片",
+                getSharedPreferences(PREFERENCES, MODE_PRIVATE)
+                        .getBoolean(PRIVATE_ALBUM_ENABLED, false));
+        privateAlbumCheck.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                updatePrivateAlbumFolderEnabled();
+                updateSelectionSummary();
+            }
+        });
+        albumSection.addView(privateAlbumCheck);
+
+        privateAlbumFolderHint = text(
+                "照片仍由手機私有相簿管理；匯入或刪除後會自動重新讀取。",
+                13, SECONDARY);
+        privateAlbumFolderHint.setPadding(dp(4), 0, dp(4), dp(6));
+        albumSection.addView(privateAlbumFolderHint);
+
+        privateAlbumFolderList = new LinearLayout(this);
+        privateAlbumFolderList.setOrientation(LinearLayout.VERTICAL);
+        albumSection.addView(privateAlbumFolderList, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT));
+        loadPrivateAlbumFolders();
+
         addDivider(albumSection);
         LinearLayout albumHeader = new LinearLayout(this);
         albumHeader.setGravity(Gravity.CENTER_VERTICAL);
@@ -1888,12 +1933,108 @@ public final class SettingsActivity extends Activity {
         showDirectory();
     }
 
+    /** Loads the private album's cached import folders for per-folder playback. */
+    private void loadPrivateAlbumFolders() {
+        if (privateAlbumFolderList == null) return;
+        privateAlbumFolderChecks.clear();
+        privateAlbumFolderList.removeAllViews();
+        android.content.SharedPreferences preferences =
+                getSharedPreferences(PREFERENCES, MODE_PRIVATE);
+        boolean customized = preferences.getBoolean(PRIVATE_ALBUM_FOLDERS_CUSTOMIZED, false);
+        Set<String> saved = preferences.getStringSet(PRIVATE_ALBUM_FOLDERS, null);
+        Set<String> savedFolders = saved == null
+                ? new HashSet<String>() : new HashSet<String>(saved);
+        Set<String> folders = new LinkedHashSet<String>();
+        Cursor cursor = null;
+        try {
+            cursor = queryPrivateAlbumFolders();
+            if (cursor != null) {
+                int folderColumn = cursor.getColumnIndex(PRIVATE_ALBUM_SOURCE_FOLDER);
+                while (folderColumn >= 0 && cursor.moveToNext()) {
+                    String folder = cursor.getString(folderColumn);
+                    if (folder != null && folder.length() > 0) folders.add(folder);
+                }
+            }
+        } catch (RuntimeException ignored) {
+            // PhonePrivateAlbum is optional outside this dedicated device build.
+        } finally {
+            if (cursor != null) cursor.close();
+        }
+
+        for (String folder : folders) {
+            final CheckBox check = checkBox(privateAlbumFolderLabel(folder),
+                    !customized || savedFolders.contains(folder));
+            check.setTextSize(14);
+            check.setPadding(dp(18), dp(2), dp(10), dp(2));
+            check.setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View view) {
+                    updateSelectionSummary();
+                }
+            });
+            privateAlbumFolderChecks.put(folder, check);
+            privateAlbumFolderList.addView(check);
+        }
+
+        if (folders.isEmpty()) {
+            privateAlbumFolderHint.setText(
+                    "尚無來源資料夾；請先在「手機私有相簿」匯入照片。"
+                            + "若使用舊版相簿，仍會播放全部私人照片。");
+        } else {
+            privateAlbumFolderHint.setText(
+                    "選擇要播放的私人來源資料夾；未勾選的資料夾不會出現。");
+        }
+        updatePrivateAlbumFolderEnabled();
+        updateSelectionSummary();
+    }
+
+    /** Uses PhonePrivateAlbum's folder index, with compatibility for older builds. */
+    private Cursor queryPrivateAlbumFolders() {
+        try {
+            Cursor cursor = getContentResolver().query(PRIVATE_ALBUM_FOLDERS_URI,
+                    new String[] { PRIVATE_ALBUM_SOURCE_FOLDER }, null, null, null);
+            if (cursor != null) return cursor;
+        } catch (RuntimeException ignored) {
+            // Older PhonePrivateAlbum builds only expose /photos.
+        }
+        return getContentResolver().query(PRIVATE_ALBUM_URI,
+                new String[] { PRIVATE_ALBUM_SOURCE_FOLDER }, null, null, null);
+    }
+
+    private String privateAlbumFolderLabel(String folder) {
+        if ("（單張匯入）".equals(folder)) return "單張匯入";
+        int separator = Math.max(folder.lastIndexOf('/'), folder.lastIndexOf('\\'));
+        String name = separator >= 0 && separator + 1 < folder.length()
+                ? folder.substring(separator + 1) : folder;
+        return name.equals(folder) ? folder : name + "\n" + folder;
+    }
+
+    private void updatePrivateAlbumFolderEnabled() {
+        boolean enabled = privateAlbumCheck == null || privateAlbumCheck.isChecked();
+        for (CheckBox check : privateAlbumFolderChecks.values()) {
+            check.setEnabled(enabled);
+            check.setAlpha(enabled ? 1.0f : 0.45f);
+        }
+    }
+
     private void updateSelectionSummary() {
-        if (selectedFolders.isEmpty()) {
+        if (selectionText == null) return;
+        int privateSources = 0;
+        if (privateAlbumCheck != null && privateAlbumCheck.isChecked()) {
+            if (privateAlbumFolderChecks.isEmpty()) {
+                privateSources = 1;
+            } else {
+                for (CheckBox check : privateAlbumFolderChecks.values()) {
+                    if (check.isChecked()) privateSources++;
+                }
+            }
+        }
+        int sourceCount = selectedFolders.size() + privateSources;
+        if (sourceCount == 0) {
             selectionText.setText("尚未選擇相簿");
         } else {
             selectionText.setText(String.format(
-                    Locale.TAIWAN, "已選 %d 個相簿", selectedFolders.size()));
+                    Locale.TAIWAN, "已選 %d 個相簿", sourceCount));
         }
     }
 
@@ -1995,7 +2136,17 @@ public final class SettingsActivity extends Activity {
                 .putInt(PomodoroHelper.PREF_DISPLAY_MODE,
                         PomodoroHelper.normalizeDisplayMode(
                                 pomodoroDisplayModeSpinner.getSelectedItemPosition()))
+                .putBoolean(PRIVATE_ALBUM_ENABLED,
+                        privateAlbumCheck != null && privateAlbumCheck.isChecked())
                 .putStringSet(PHOTO_FOLDERS, new HashSet<String>(selectedFolders));
+        if (!privateAlbumFolderChecks.isEmpty()) {
+            Set<String> selectedPrivateFolders = new HashSet<String>();
+            for (Map.Entry<String, CheckBox> entry : privateAlbumFolderChecks.entrySet()) {
+                if (entry.getValue().isChecked()) selectedPrivateFolders.add(entry.getKey());
+            }
+            editor.putBoolean(PRIVATE_ALBUM_FOLDERS_CUSTOMIZED, true)
+                    .putStringSet(PRIVATE_ALBUM_FOLDERS, selectedPrivateFolders);
+        }
         if (resetClockLayoutRequested) {
             PhotoClockActivity.resetClockLayoutPreferences(editor);
         }

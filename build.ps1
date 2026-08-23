@@ -4,20 +4,20 @@ $projectRoot = $PSScriptRoot
 $dist = Join-Path $projectRoot 'dist'
 $buildConfig = Join-Path $projectRoot 'app\build.gradle.kts'
 $content = Get-Content -Raw $buildConfig
-$versionMajor = [regex]::Match($content, 'val versionMajor = (\d+)').Groups[1].Value
-$versionMinor = [regex]::Match($content, 'val versionMinor = (\d+)').Groups[1].Value
-$basePatch = [int][regex]::Match($content, 'val basePatch = (\d+)').Groups[1].Value
+$versionName = [regex]::Match(
+    $content, 'val redmiVersionName = "([^"]+)"').Groups[1].Value
+if (-not $versionName) { throw 'Cannot read redmiVersionName from app/build.gradle.kts' }
 
 $variants = @(
     @{
         Gradle = 'StoropiaTestRelease'
         Source = 'storopiaTest\release\app-storopiaTest-release.apk'
-        Name = "LittleClock-v${versionMajor}.${versionMinor}.${basePatch}-test-android4.2-storopia.apk"
+        Name = "LittleClock-v${versionName}-test-storopia.apk"
     },
     @{
         Gradle = 'StandardRelease'
         Source = 'standard\release\app-standard-release.apk'
-        Name = "LittleClock-v${versionMajor}.${versionMinor}.${basePatch}.apk"
+        Name = "LittleClock-v${versionName}.apk"
     }
 )
 

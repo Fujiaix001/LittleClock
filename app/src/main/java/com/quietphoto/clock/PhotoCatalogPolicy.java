@@ -1,6 +1,8 @@
 package com.quietphoto.clock;
 
-/** Memory-aware limits for the in-memory photo catalog. Pure Java so it stays testable. */
+import java.util.Set;
+
+/** Pure Java rules for building the in-memory photo catalog. */
 public final class PhotoCatalogPolicy {
     private PhotoCatalogPolicy() { }
 
@@ -12,5 +14,11 @@ public final class PhotoCatalogPolicy {
             return 25_000;
         }
         return 50_000;
+    }
+
+    /** A null selection preserves the legacy behavior of including every private folder. */
+    public static boolean includesPrivateFolder(Set<String> selectedFolders, String folder) {
+        return selectedFolders == null
+                || folder != null && selectedFolders.contains(folder);
     }
 }
