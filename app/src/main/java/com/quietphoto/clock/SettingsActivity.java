@@ -508,56 +508,48 @@ public final class SettingsActivity extends Activity {
     }
 
     private View buildInterface() {
+        LinearLayout screen = new LinearLayout(this);
+        screen.setOrientation(LinearLayout.VERTICAL);
+        screen.setBackgroundColor(BACKGROUND);
+        applySystemBarInsets(screen);
+
         ScrollView outerScroll = new ScrollView(this);
         outerScroll.setFillViewport(true);
         outerScroll.setBackgroundColor(BACKGROUND);
 
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(dp(20), dp(16), dp(20), dp(24));
-        applySystemBarInsets(root);
+        root.setPadding(dp(16), dp(14), dp(16), dp(18));
 
         LinearLayout titleRow = new LinearLayout(this);
         titleRow.setGravity(Gravity.CENTER_VERTICAL);
         LinearLayout titleStack = new LinearLayout(this);
         titleStack.setOrientation(LinearLayout.VERTICAL);
-        TextView eyebrow = text("LITTLECLOCK", 11, ACCENT);
+        TextView eyebrow = text("LITTLECLOCK  ·  4.2", 11, ACCENT);
         if (Build.VERSION.SDK_INT >= 21) eyebrow.setLetterSpacing(0.18f);
         TextView title = text("設定", 28, PRIMARY);
+        TextView subtitle = text("依類別展開，需要時再調整", 13, SECONDARY);
         titleStack.addView(eyebrow, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT, dp(20)));
         titleStack.addView(title, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT, dp(38)));
+        titleStack.addView(subtitle, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, dp(24)));
 
         selectionText = text("", 14, ACCENT);
         selectionText.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
 
-        Button cancel = button("取消", PANEL);
-        cancel.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View view) {
-                discardPendingTreeGrants();
-                finish();
-            }
-        });
+        titleRow.addView(titleStack, new LinearLayout.LayoutParams(0, dp(84), 1));
+        root.addView(titleRow, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(88)));
 
-        Button save = button("套用", ACTIVE_CHIP);
-        save.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View view) {
-                saveSettings();
-            }
-        });
-
-        titleRow.addView(titleStack, new LinearLayout.LayoutParams(0, dp(62), 1));
-        titleRow.addView(cancel, new LinearLayout.LayoutParams(dp(80), dp(44)));
-        LinearLayout.LayoutParams saveParams = new LinearLayout.LayoutParams(dp(80), dp(44));
-        saveParams.setMargins(dp(10), 0, 0, 0);
-        titleRow.addView(save, saveParams);
-        root.addView(titleRow);
-
-        profileSpinner = addSpinner(
+        LinearLayout profileSection = addSettingsSection(
                 root,
+                "使用情境",
+                "切換預設、桌面、床頭或展示設定",
+                true);
+        profileSpinner = addSpinner(
+                profileSection,
                 "目前情境",
                 DisplayProfileStore.labels(),
                 DisplayProfileStore.indexOf(activeProfileId));
@@ -599,14 +591,51 @@ public final class SettingsActivity extends Activity {
             public void onNothingSelected(AdapterView<?> parent) {
             }
         });
+        TextView profileHint = text(
+                "切換情境會立即載入已保存內容，尚未儲存的修改將捨棄。",
+                12, SECONDARY);
+        profileHint.setPadding(dp(2), 0, dp(2), dp(4));
+        profileSection.addView(profileHint);
 
-        addSectionHeader(root, "顯示與功能", "DISPLAY & TOOLS");
+        TextView categoryHint = text(
+                "每個類別都可獨立展開；變更會在按下「儲存並返回」後一次套用。",
+                13, SECONDARY);
+        categoryHint.setPadding(dp(4), dp(4), dp(4), dp(8));
+        root.addView(categoryHint);
+
+        final LinearLayout albumSection = addSettingsSection(
+                root,
+                "相簿與播放",
+                "相片來源、停留時間、順序、轉場與顯示方式",
+                true);
+        final LinearLayout clockSection = addSettingsSection(
+                root,
+                "時鐘與版面",
+                "時間、日期、秒數、字型、底板與排版位置",
+                false);
+        final LinearLayout weatherSection = addSettingsSection(
+                root,
+                "天氣",
+                "地點、字型、精簡排列與延伸資訊",
+                false);
+        final LinearLayout powerSection = addSettingsSection(
+                root,
+                "電源與顯示",
+                "效能、亮屏、電量、亮度與夜間暗屏",
+                false);
+        final LinearLayout focusSection = addSettingsSection(
+                root,
+                "番茄鐘與鬧鐘",
+                "專注時間、休息時間與每日鬧鐘",
+                false);
+        final LinearLayout effectsSection = addSettingsSection(
+                root,
+                "相片效果與維護",
+                "智慧取景、色彩、相框、防烙印與隱藏相片",
+                false);
 
         // 常用播放與顯示設定。
-        LinearLayout mainSection = new LinearLayout(this);
-        mainSection.setOrientation(LinearLayout.VERTICAL);
-        mainSection.setPadding(dp(16), dp(14), dp(16), dp(16));
-        mainSection.setBackground(panelBackground());
+        LinearLayout mainSection = albumSection;
 
         LinearLayout intervalHeader = new LinearLayout(this);
         intervalHeader.setGravity(Gravity.CENTER_VERTICAL);
@@ -665,26 +694,13 @@ public final class SettingsActivity extends Activity {
                         "最新優先", "最舊優先" },
                 playbackOrder);
 
-        fontSpinner = addSpinner(
-                mainSection,
-                "時間字型",
-                FontManager.getDisplayNames(fontOptions),
-                FontManager.findOptionIndex(fontOptions, selectedFontId));
-
-        dateFontSpinner = addSpinner(
-                mainSection,
-                "日期字型",
-                FontManager.getDisplayNames(fontOptions),
-                FontManager.findOptionIndex(fontOptions, selectedDateFontId));
-
         displayModeSpinner = addSpinner(
                 mainSection,
                 "相片顯示",
                 new String[] { "填滿畫面", "完整顯示", "柔和背景（選用）" },
                 Math.max(0, Math.min(2, selectedDisplayMode)));
 
-        addDivider(mainSection);
-        addInlineSectionHeader(mainSection, "天氣", "WEATHER");
+        mainSection = weatherSection;
 
         weatherEnabledCheck = checkBox("顯示天氣（僅 Wi-Fi）", weatherEnabled);
         mainSection.addView(weatherEnabledCheck);
@@ -778,13 +794,15 @@ public final class SettingsActivity extends Activity {
             }
         });
 
+        mainSection = powerSection;
         performanceModeSpinner = addSpinner(
                 mainSection,
                 "效能模式",
                 new String[] { "低耗電（建議）", "標準", "展演（高耗能）" },
                 PerformanceModePolicy.normalize(performanceMode));
+        addInlineSectionHeader(mainSection, "螢幕與電量", "POWER");
 
-        addDivider(mainSection);
+        mainSection = focusSection;
         addInlineSectionHeader(mainSection, "番茄鐘", "POMODORO");
         pomodoroDisplayModeSpinner = addSpinner(
                 mainSection,
@@ -892,8 +910,7 @@ public final class SettingsActivity extends Activity {
             }
         });
 
-        addDivider(mainSection);
-        addInlineSectionHeader(mainSection, "時鐘顯示", "CLOCK");
+        mainSection = clockSection;
         clockTimeCheck = checkBox("顯示時間", clockTimeEnabled);
         mainSection.addView(clockTimeCheck);
 
@@ -906,20 +923,32 @@ public final class SettingsActivity extends Activity {
                 new String[] { "不顯示", "充電時顯示", "永遠顯示" },
                 secondsMode);
 
-        batteryDisplayModeSpinner = addSpinner(
+        fontSpinner = addSpinner(
                 mainSection,
+                "時間字型",
+                FontManager.getDisplayNames(fontOptions),
+                FontManager.findOptionIndex(fontOptions, selectedFontId));
+
+        dateFontSpinner = addSpinner(
+                mainSection,
+                "日期字型",
+                FontManager.getDisplayNames(fontOptions),
+                FontManager.findOptionIndex(fontOptions, selectedDateFontId));
+
+        batteryDisplayModeSpinner = addSpinner(
+                powerSection,
                 "電量顯示",
                 new String[] { "不顯示", "永遠顯示", "只在未充電時顯示" },
                 batteryDisplayMode);
 
         keepScreenModeSpinner = addSpinner(
-                mainSection,
+                powerSection,
                 "保持螢幕亮起",
                 new String[] { "永遠保持亮屏", "只有充電時", "跟隨系統休眠" },
                 keepScreenMode);
 
         lowBatteryGuardCheck = checkBox("低電量時降低相片耗電", lowBatteryGuard);
-        mainSection.addView(lowBatteryGuardCheck);
+        powerSection.addView(lowBatteryGuardCheck);
 
         clockLayoutModeSpinner = addSpinner(
                 mainSection,
@@ -981,14 +1010,19 @@ public final class SettingsActivity extends Activity {
         mainSection.addView(resetClockLayoutButton, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, dp(42)));
 
+        mainSection = powerSection;
         addDivider(mainSection);
         addInlineSectionHeader(mainSection, "夜間模式", "NIGHT");
         nightModeCheck = checkBox("排程暗屏", nightModeEnabled);
         mainSection.addView(nightModeCheck);
 
+        final LinearLayout nightOptions = new LinearLayout(this);
+        nightOptions.setOrientation(LinearLayout.VERTICAL);
+        nightOptions.setVisibility(nightModeEnabled ? View.VISIBLE : View.GONE);
+
         nightScheduleText = text("", 15, ACCENT);
         nightScheduleText.setPadding(dp(8), dp(4), dp(8), 0);
-        mainSection.addView(nightScheduleText, new LinearLayout.LayoutParams(
+        nightOptions.addView(nightScheduleText, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, dp(32)));
 
         LinearLayout nightControls = new LinearLayout(this);
@@ -1052,12 +1086,18 @@ public final class SettingsActivity extends Activity {
         p3.setMargins(dp(4), 0, 0, 0);
         nightControls.addView(endPlus, p3);
 
-        mainSection.addView(nightControls);
+        nightOptions.addView(nightControls);
+        mainSection.addView(nightOptions);
+        nightModeCheck.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                nightOptions.setVisibility(
+                        nightModeCheck.isChecked() ? View.VISIBLE : View.GONE);
+            }
+        });
         updateNightText();
 
-        final LinearLayout advancedOptions = new LinearLayout(this);
-        advancedOptions.setOrientation(LinearLayout.VERTICAL);
-        advancedOptions.setVisibility(View.GONE);
+        final LinearLayout advancedOptions = effectsSection;
 
         adaptiveColorCheck = checkBox("依相片調整時間色彩", adaptiveColorEnabled);
         advancedOptions.addView(adaptiveColorCheck);
@@ -1073,11 +1113,11 @@ public final class SettingsActivity extends Activity {
 
         if (hasLightSensor()) {
             autoBrightnessCheck = checkBox("環境光自動亮度", autoBrightnessEnabled);
-            advancedOptions.addView(autoBrightnessCheck);
+            powerSection.addView(autoBrightnessCheck);
         }
 
         favoritesOnlyCheck = checkBox("只播放收藏相片", favoritesOnly);
-        advancedOptions.addView(favoritesOnlyCheck);
+        albumSection.addView(favoritesOnlyCheck);
 
         Button clearHidden = button("重新顯示已隱藏相片", PANEL);
         clearHidden.setOnClickListener(new View.OnClickListener() {
@@ -1090,43 +1130,23 @@ public final class SettingsActivity extends Activity {
             }
         });
         advancedOptions.addView(clearHidden, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, dp(38)));
-
-        addDivider(mainSection);
-        final Button advancedToggle = button("顯示進階設定", PANEL_RAISED);
-        advancedToggle.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View view) {
-                boolean show = advancedOptions.getVisibility() != View.VISIBLE;
-                advancedOptions.setVisibility(show ? View.VISIBLE : View.GONE);
-                advancedToggle.setText(show ? "收合進階設定" : "顯示進階設定");
-            }
-        });
-        LinearLayout.LayoutParams advancedParams = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, dp(38));
-        advancedParams.setMargins(0, dp(6), 0, dp(4));
-        mainSection.addView(advancedToggle, advancedParams);
-        mainSection.addView(advancedOptions);
-
-        LinearLayout.LayoutParams secParams = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        secParams.setMargins(0, dp(6), 0, dp(10));
-        root.addView(mainSection, secParams);
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(44)));
 
         // 相簿資料夾選擇。
+        addDivider(albumSection);
         LinearLayout albumHeader = new LinearLayout(this);
         albumHeader.setGravity(Gravity.CENTER_VERTICAL);
-        TextView albumTitle = text("相簿", 19, PRIMARY);
+        TextView albumTitle = text("相簿來源", 17, PRIMARY);
         albumHeader.addView(albumTitle, new LinearLayout.LayoutParams(0, dp(36), 1));
         albumHeader.addView(selectionText, new LinearLayout.LayoutParams(0, dp(36), 2));
         LinearLayout.LayoutParams albumHeaderParams = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, dp(44));
         albumHeaderParams.setMargins(dp(2), dp(8), dp(2), 0);
-        root.addView(albumHeader, albumHeaderParams);
+        albumSection.addView(albumHeader, albumHeaderParams);
 
         LinearLayout pathRow = new LinearLayout(this);
         pathRow.setGravity(Gravity.CENTER_VERTICAL);
-        Button up = button(Build.VERSION.SDK_INT >= 21 ? "選擇資料夾" : "上一層", PANEL);
+        Button up = button(Build.VERSION.SDK_INT >= 21 ? "新增相簿" : "上一層", PANEL);
         up.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
@@ -1142,7 +1162,7 @@ public final class SettingsActivity extends Activity {
         pathRow.addView(up, new LinearLayout.LayoutParams(
                 Build.VERSION.SDK_INT >= 21 ? dp(132) : dp(100), dp(40)));
         pathRow.addView(pathText, new LinearLayout.LayoutParams(0, dp(40), 1));
-        root.addView(pathRow);
+        albumSection.addView(pathRow);
 
         currentFolderCheck = new CheckBox(this);
         currentFolderCheck.setText("使用目前資料夾中的照片（包含子目錄）");
@@ -1168,7 +1188,7 @@ public final class SettingsActivity extends Activity {
                 }
             }
         });
-        root.addView(currentFolderCheck, new LinearLayout.LayoutParams(
+        albumSection.addView(currentFolderCheck, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, dp(44)));
         if (Build.VERSION.SDK_INT >= 21) {
             currentFolderCheck.setVisibility(View.GONE);
@@ -1178,13 +1198,47 @@ public final class SettingsActivity extends Activity {
         folderList.setOrientation(LinearLayout.VERTICAL);
         folderList.setBackground(panelBackground());
         folderList.setPadding(0, dp(8), 0, dp(8));
-        root.addView(folderList, new LinearLayout.LayoutParams(
+        albumSection.addView(folderList, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT));
 
         outerScroll.addView(root);
+        screen.addView(outerScroll, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, 0, 1));
+
+        LinearLayout actionBar = new LinearLayout(this);
+        actionBar.setGravity(Gravity.CENTER_VERTICAL);
+        actionBar.setPadding(dp(16), dp(8), dp(16), dp(8));
+        actionBar.setBackgroundColor(PANEL);
+
+        Button cancel = button("取消", PANEL_RAISED);
+        cancel.setContentDescription("放棄變更並返回時鐘");
+        cancel.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                discardPendingTreeGrants();
+                finish();
+            }
+        });
+
+        Button save = button("儲存並返回", ACTIVE_CHIP);
+        save.setContentDescription("儲存全部設定並返回時鐘");
+        save.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                saveSettings();
+            }
+        });
+
+        actionBar.addView(cancel, new LinearLayout.LayoutParams(0, dp(48), 1));
+        LinearLayout.LayoutParams saveParams = new LinearLayout.LayoutParams(0, dp(48), 2);
+        saveParams.setMargins(dp(10), 0, 0, 0);
+        actionBar.addView(save, saveParams);
+        screen.addView(actionBar, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(64)));
+
         updateIntervalDisplay();
-        return outerScroll;
+        return screen;
     }
 
     private void applySystemBarInsets(final View view) {
@@ -1326,21 +1380,26 @@ public final class SettingsActivity extends Activity {
 
     private Spinner addSpinner(LinearLayout parent, String label, String[] items, int selectedIndex) {
         LinearLayout row = new LinearLayout(this);
-        row.setGravity(Gravity.CENTER_VERTICAL);
-        row.setPadding(0, dp(3), 0, dp(3));
+        row.setOrientation(LinearLayout.VERTICAL);
+        row.setPadding(0, dp(4), 0, dp(8));
 
-        TextView labelView = text(label, 16, PRIMARY);
+        TextView labelView = text(label, 14, SECONDARY);
+        labelView.setPadding(dp(2), 0, dp(2), dp(4));
         Spinner spinner = new Spinner(this);
         spinner.setBackground(fieldBackground());
-        spinner.setPadding(dp(10), 0, dp(8), 0);
+        spinner.setPadding(dp(12), 0, dp(10), 0);
         ArrayAdapter<String> adapter = new CompactSpinnerAdapter(items);
         adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
         spinner.setAdapter(adapter);
         spinner.setSelection(Math.max(0, Math.min(items.length - 1, selectedIndex)));
 
-        row.addView(labelView, new LinearLayout.LayoutParams(0, dp(38), 1));
-        row.addView(spinner, new LinearLayout.LayoutParams(0, dp(38), 2));
-        parent.addView(row);
+        row.addView(labelView, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(24)));
+        row.addView(spinner, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(44)));
+        parent.addView(row, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT));
         return spinner;
     }
 
@@ -1377,7 +1436,7 @@ public final class SettingsActivity extends Activity {
             }
             if (dropDown) {
                 view.setLayoutParams(new AbsListView.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT, dp(38)));
+                        ViewGroup.LayoutParams.MATCH_PARENT, dp(44)));
             }
         }
     }
@@ -1386,12 +1445,12 @@ public final class SettingsActivity extends Activity {
         CheckBox checkBox = new CheckBox(this);
         checkBox.setText(label);
         checkBox.setTextColor(PRIMARY);
-        checkBox.setTextSize(15);
+        checkBox.setTextSize(16);
         checkBox.setTypeface(uiTypeface);
         checkBox.setChecked(checked);
-        checkBox.setPadding(dp(4), dp(3), dp(6), dp(3));
-        checkBox.setMinHeight(dp(36));
-        checkBox.setMinimumHeight(dp(36));
+        checkBox.setPadding(dp(4), dp(4), dp(6), dp(4));
+        checkBox.setMinHeight(dp(44));
+        checkBox.setMinimumHeight(dp(44));
         tintCheckBox(checkBox);
         return checkBox;
     }
@@ -2150,17 +2209,68 @@ public final class SettingsActivity extends Activity {
         return drawable;
     }
 
-    private void addSectionHeader(LinearLayout parent, String title, String caption) {
-        LinearLayout header = new LinearLayout(this);
+    private LinearLayout addSettingsSection(LinearLayout parent, final String title,
+            String summary, boolean expanded) {
+        final LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setBackground(panelBackground());
+
+        final LinearLayout header = new LinearLayout(this);
         header.setGravity(Gravity.CENTER_VERTICAL);
-        TextView titleView = text(title, 19, PRIMARY);
-        TextView captionView = text(caption, 10, SECONDARY);
-        captionView.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
-        if (Build.VERSION.SDK_INT >= 21) captionView.setLetterSpacing(0.14f);
-        header.addView(titleView, new LinearLayout.LayoutParams(0, dp(44), 1));
-        header.addView(captionView, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT, dp(44)));
-        parent.addView(header);
+        header.setPadding(dp(16), dp(10), dp(12), dp(10));
+        header.setClickable(true);
+        header.setFocusable(true);
+        header.setMinimumHeight(dp(72));
+
+        LinearLayout labels = new LinearLayout(this);
+        labels.setOrientation(LinearLayout.VERTICAL);
+        TextView titleView = text(title, 18, PRIMARY);
+        TextView summaryView = text(summary, 13, SECONDARY);
+        summaryView.setMaxLines(2);
+        labels.addView(titleView, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(28)));
+        labels.addView(summaryView, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT));
+
+        final TextView action = text(expanded ? "收合" : "展開", 13, ACCENT);
+        action.setGravity(Gravity.CENTER);
+        header.addView(labels, new LinearLayout.LayoutParams(0,
+                LinearLayout.LayoutParams.WRAP_CONTENT, 1));
+        header.addView(action, new LinearLayout.LayoutParams(dp(54), dp(44)));
+
+        final View divider = new View(this);
+        divider.setBackgroundColor(STROKE);
+        divider.setVisibility(expanded ? View.VISIBLE : View.GONE);
+
+        final LinearLayout body = new LinearLayout(this);
+        body.setOrientation(LinearLayout.VERTICAL);
+        body.setPadding(dp(16), dp(10), dp(16), dp(16));
+        body.setVisibility(expanded ? View.VISIBLE : View.GONE);
+
+        header.setContentDescription(title + (expanded ? "，已展開" : "，已收合"));
+        header.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                boolean show = body.getVisibility() != View.VISIBLE;
+                body.setVisibility(show ? View.VISIBLE : View.GONE);
+                divider.setVisibility(show ? View.VISIBLE : View.GONE);
+                action.setText(show ? "收合" : "展開");
+                header.setContentDescription(title + (show ? "，已展開" : "，已收合"));
+            }
+        });
+
+        card.addView(header);
+        card.addView(divider, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(1)));
+        card.addView(body);
+
+        LinearLayout.LayoutParams cardParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+        cardParams.setMargins(0, dp(5), 0, dp(7));
+        parent.addView(card, cardParams);
+        return body;
     }
 
     private void addInlineSectionHeader(LinearLayout parent, String title, String caption) {
@@ -2226,8 +2336,8 @@ public final class SettingsActivity extends Activity {
             }
         }
 
-        @Override public int getIntrinsicWidth() { return dp(14); }
-        @Override public int getIntrinsicHeight() { return dp(14); }
+        @Override public int getIntrinsicWidth() { return dp(18); }
+        @Override public int getIntrinsicHeight() { return dp(18); }
         @Override public void setAlpha(int alpha) { paint.setAlpha(alpha); }
         @Override public void setColorFilter(ColorFilter colorFilter) { paint.setColorFilter(colorFilter); }
         @Override public int getOpacity() { return PixelFormat.TRANSLUCENT; }

@@ -1,4 +1,4 @@
-# ⏰ 小時鐘 (LittleClock) 4.1.0
+# ⏰ 小時鐘 (LittleClock) 4.2.0
 
 一款輕量、無廣告、無背景常駐的 Android 相片時鐘；僅使用 AndroidX ExifInterface 處理相片方向。
 適用於新舊平板、手機、電視盒與 Amazon Fire 平板。
@@ -10,6 +10,7 @@
 ## 核心功能
 
 - **時鐘縮放**：支援雙指縮放，並記憶偏好設定。
+- **友善設定頁**：所有功能依相簿、時鐘、天氣、電源、專注工具與相片效果分類；類別可獨立展開，儲存操作固定在畫面底部。
 - **可選秒數**：可關閉、只在充電時顯示，或永遠顯示秒數；秒數使用獨立輕量更新，不增加相片解碼工作。
 - **播放手勢**：左滑下一張、右滑上一張；一輪播完前不重複。
 - **播放順序**：可選隨機、檔名正序／反序、最新優先或最舊優先；排序使用檔名與檔案時間，不讀取 EXIF。
@@ -57,8 +58,8 @@
 ```
 構建會固定產生一組雙版本：
 
-- `dist/LittleClock-v4.1.0-test-android4.2-storopia.apk`：含 Storopia，僅供內部測試，使用獨立套件名稱。
-- `dist/LittleClock-v4.1.0.apk`：標準正式版，不含 Storopia。
+- `dist/LittleClock-v4.2.0-test-android4.2-storopia.apk`：含 Storopia，僅供內部測試，使用獨立套件名稱。
+- `dist/LittleClock-v4.2.0.apk`：標準正式版，不含 Storopia。
 
 首次建立 release APK 前，請妥善保存專案根目錄的 `keystore.properties` 與 `keystore/littleclock-release.jks`；兩者已被 Git 忽略，遺失後無法用同一簽章更新既有正式版。
 

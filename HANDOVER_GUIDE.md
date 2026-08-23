@@ -7,10 +7,10 @@
 ## 📌 1. 專案基本資訊與位置
 
 - **專案名稱**：小時鐘 (LittleClock)
-- **當前版本**：`v4.1.1-test-android4.2-storopia` / `v4.1.1`
-- **專案絕對路徑**：`C:\Users\hsuchungming\Desktop\WorkSpace\LittleClock-Workspace\current-universal-v4.1.1`
-- **測試包位置**：`C:\Users\hsuchungming\Desktop\WorkSpace\LittleClock-Workspace\current-universal-v4.1.1\dist\LittleClock-v4.1.1-test-android4.2-storopia.apk`
-- **標準包位置**：`C:\Users\hsuchungming\Desktop\WorkSpace\LittleClock-Workspace\current-universal-v4.1.1\dist\LittleClock-v4.1.1.apk`
+- **當前版本**：`v4.2.0-test-android4.2-storopia` / `v4.2.0`
+- **專案絕對路徑**：`/home/hsuchungming/桌面/LittleClock-Workspace/current-universal-v4.2.0`
+- **測試包位置**：`/home/hsuchungming/桌面/LittleClock-Workspace/current-universal-v4.2.0/dist/LittleClock-v4.2.0-test-android4.2-storopia.apk`
+- **標準包位置**：`/home/hsuchungming/桌面/LittleClock-Workspace/current-universal-v4.2.0/dist/LittleClock-v4.2.0.apk`
 - **授權狀態**：Storopia 的分發授權尚未確認；包含此字型的 APK 僅供內部測試。
 
 ---
@@ -87,7 +87,7 @@
 
 ```powershell
 # 1. 切換至專案目錄
-cd C:\Users\hsuchungming\Desktop\WorkSpace\LittleClock-Workspace\current-universal-v4.1.1
+cd /home/hsuchungming/桌面/LittleClock-Workspace/current-universal-v4.2.0
 
 # 2. 一鍵編譯與打包 Release APK
 powershell.exe -ExecutionPolicy Bypass -File .\build.ps1
@@ -107,5 +107,5 @@ git status
 ## 💬 6. 新對話接續提示 (在新對話直接發送以下文字即可)
 
 ```text
-我們正在維護「小時鐘」(LittleClock) Android 專案，專案路徑為 C:\Users\hsuchungming\Desktop\WorkSpace\LittleClock-Workspace\current-universal-v4.1.1，當前版本為 v4.1.1-test / v4.1.1，已完成 Git 初始化。請參考集中目錄的 README.md 與本目錄下的 HANDOVER_GUIDE.md，並在開始工作前先檢查 Git 管理狀態。
+我們正在維護「小時鐘」(LittleClock) Android 專案，專案路徑為 /home/hsuchungming/桌面/LittleClock-Workspace/current-universal-v4.2.0，當前版本為 v4.2.0-test / v4.2.0，已完成 Git 初始化。請參考 README.md 與 HANDOVER_GUIDE.md，並在開始工作前先檢查 Git 管理狀態。
 ```
